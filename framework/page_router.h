@@ -55,7 +55,8 @@ typedef enum {
     PAGE_WEATHER,        // 天气页
     PAGE_NOTIFICATIONS,  // 通知页
     PAGE_MUSIC,          // 音乐页（曲目展示 + 播放控制）
-    PAGE_TIME_ADJUST,    // 时间/日期调整页（从菜单进入）
+    PAGE_TIME_ADJUST,    // 时间/日期调整页（从设置进入）
+    PAGE_SETTINGS,       // 设置页（聚合时间调节/亮度/关于）
     PAGE_SYSTEM,         // 系统页（CPU/MEM/DISK/BAT/NET/Temp）
     PAGE_DYNAMIC_APP,    // 动态 App 演示页（MicroQuickJS MVP）
     PAGE_MAX,            // 页面总数（自动计算）

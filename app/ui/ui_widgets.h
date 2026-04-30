@@ -46,6 +46,28 @@ lv_obj_t *ui_card_accent(lv_obj_t *parent);
 lv_obj_t *ui_kv_row(lv_obj_t *parent, const char *key, const char *value,
                      lv_obj_t **out_value, bool with_divider);
 
+/* ---- 列表行（设置页等用）----
+ * 三段式：左 24px 彩色图标（Material 字体）+ 中 label + 右值 + chevron。
+ *
+ * - parent 应是 ui_card / 普通容器；本组件自带 48px 行高 + 底部分隔线。
+ * - icon 传 ICON_* UTF-8 字面量；icon_color 控制其颜色（一图一色风格）。
+ * - value 可传 NULL，此时右侧只有 chevron。
+ * - out_value 不为 NULL 时，回填右侧 value label 指针，方便后续 set_text 更新。
+ *
+ * 整行带 LV_OBJ_FLAG_CLICKABLE，调用方挂 LV_EVENT_CLICKED 即可。
+ *
+ * 使用：
+ *   lv_obj_t *val;
+ *   lv_obj_t *row = ui_list_row(card, ICON_BRIGHTNESS, "亮度", "中",
+ *                               UI_C_WARN, &val);
+ *   lv_obj_add_event_cb(row, on_bright_clicked, LV_EVENT_CLICKED, NULL);
+ *   ...
+ *   lv_label_set_text(val, "高");
+ */
+lv_obj_t *ui_list_row(lv_obj_t *parent,
+                       const char *icon, const char *label, const char *value,
+                       lv_color_t icon_color, lv_obj_t **out_value);
+
 /* ---- 图标按钮 ----
  * symbol 传 LV_SYMBOL_LEFT / "\xEF\x83\x90" 等 FontAwesome 字符串。
  * w/h 给 0 用默认 36×30。

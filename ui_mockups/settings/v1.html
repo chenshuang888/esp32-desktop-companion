@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Settings v1 — 列表风格设置页</title>
+<link rel="stylesheet" href="../_shared/tokens.css">
+<link rel="stylesheet" href="../_shared/frame.css">
+<style>
+  /* ============================================================================
+   * settings v1：状态栏 + 大标题 + 列表卡片
+   *
+   * 列表行：左 24px 彩色图标 + 中文 label + 右值 + chevron
+   *   - 时间调节：右侧仅 chevron
+   *   - 亮度：     右侧档位文字（低/中/高/满）+ chevron
+   *   - 关于：     右侧仅 chevron
+   *
+   * 行高 48px，三行总高 144 + 卡片上下 padding ≈ 160
+   * 翻译到 LVGL：行内部用 ui_list_row(parent, icon, label, value)
+   * ========================================================================= */
+
+  .screen { padding: 0; display: flex; flex-direction: column; }
+
+  /* ---- 状态栏（与 menu 一致）---- */
+  .statusbar {
+    height: 24px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    padding: 0 var(--sp-md);
+    border-bottom: 1px solid rgba(198,198,200,0.5);
+    font-size: 12px;
+    color: var(--text-dim);
+    gap: var(--sp-md);
+  }
+  .statusbar .time { flex: 1; }
+  .statusbar .right { display: flex; gap: var(--sp-md); align-items: center; }
+  .statusbar .bt-on { color: var(--accent); }
+  .statusbar .battery { display: flex; gap: var(--sp-xs); align-items: center; }
+  .statusbar .battery .pct { color: var(--text); font-weight: 600; }
+  .statusbar .battery .icon { color: var(--ok); font-size: 14px; }
+
+  /* ---- 标题区 ---- */
+  .header {
+    padding: var(--sp-md) var(--sp-lg) var(--sp-sm);
+    flex-shrink: 0;
+  }
+  .header .title {
+    font-size: var(--f-title);
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  /* ---- 列表卡片 ---- */
+  .body {
+    padding: 0 var(--sp-md);
+    flex: 1;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid rgba(198,198,200,0.5);
+    border-radius: var(--r-lg);
+    overflow: hidden;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    padding: 0 var(--sp-md);
+    height: 48px;
+    border-bottom: 1px solid rgba(198,198,200,0.4);
+    gap: var(--sp-md);
+    cursor: pointer;
+    user-select: none;
+  }
+  .row:last-child { border-bottom: none; }
+  .row:active { background: var(--panel-hi); }
+
+  .row .icon {
+    width: 24px;
+    text-align: center;
+    font-size: 20px;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .row .label {
+    flex: 1;
+    font-size: var(--f-body);
+    color: var(--text);
+  }
+  .row .value {
+    font-size: var(--f-body);
+    color: var(--text-muted);
+  }
+  .row .chev {
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1;
+  }
+
+  /* 一图一色（与 menu cell 配色保持一致） */
+  .row.time     .icon { color: var(--info);  }   /* 时间 5AC8FA 浅蓝 */
+  .row.bright   .icon { color: var(--warn);  }   /* 亮度 FF9500 橙   */
+  .row.about    .icon { color: var(--text-muted); } /* 关于 6E6E73 灰   */
+</style>
+</head>
+<body>
+
+<div class="stages-row">
+
+  <div class="stage">
+    <div class="meta">v1 · settings · 240×320</div>
+    <div class="screen">
+
+      <div class="statusbar">
+        <span class="time">14:32</span>
+        <span class="right">
+          <span class="bt-on">⌬</span>
+          <span class="battery">
+            <span class="icon">▮</span>
+            <span class="pct">87%</span>
+          </span>
+        </span>
+      </div>
+
+      <div class="header">
+        <div class="title">设置</div>
+      </div>
+
+      <div class="body">
+        <div class="card">
+          <div class="row time">
+            <span class="icon">⏰</span>
+            <span class="label">时间调节</span>
+            <span class="chev">›</span>
+          </div>
+          <div class="row bright">
+            <span class="icon">☀</span>
+            <span class="label">亮度</span>
+            <span class="value">中</span>
+            <span class="chev">›</span>
+          </div>
+          <div class="row about">
+            <span class="icon">ⓘ</span>
+            <span class="label">关于</span>
+            <span class="chev">›</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<div class="toolbar">
+  <button id="btn-grid">Toggle 8px Grid</button>
+</div>
+<script>
+  document.getElementById('btn-grid').onclick = function(){
+    document.body.classList.toggle('show-grid');
+    this.classList.toggle('on');
+  };
+</script>
+</body>
+</html>

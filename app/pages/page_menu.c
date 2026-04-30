@@ -12,8 +12,6 @@
 #include "app_fonts.h"
 
 #include "ble_driver.h"
-#include "lcd_panel.h"
-#include "backlight_storage.h"
 #include "dynamic_app_registry.h"
 #include "dynapp_upload_manager.h"
 #include "dynapp_fs_worker.h"
@@ -51,7 +49,6 @@ static const char *TAG = "page_menu";
 #define MAX_TOTAL_CELLS  (CELLS_PER_PAGE * MAX_PAGES)
 
 typedef enum {
-    CELL_STATIC_BACKLIGHT,    /* 切背光档 */
     CELL_STATIC_PAGE,         /* 切到 entry->page_id */
     CELL_DYNAPP,              /* 进动态 app；user_data = char* (heap copy of name) */
 } cell_kind_t;
@@ -86,9 +83,6 @@ typedef struct {
 static page_menu_ui_t s_ui = {0};
 static volatile bool  s_dirty = false;
 
-/* 背光四档 */
-static const uint8_t BACKLIGHT_STEPS[] = {64, 128, 192, 255};
-
 /* ============================================================================
  * 静态 cell 定义表（顺序即排版顺序）
  *
@@ -108,13 +102,11 @@ typedef struct {
 
 /* iOS 风一图一色，跟 mockup 配色一致 */
 static const static_cell_def_t s_static_defs[] = {
-    { CELL_STATIC_PAGE,       PAGE_TIME_ADJUST,    ICON_EDIT_CALENDAR, "时间", 0x5AC8FA },
     { CELL_STATIC_PAGE,       PAGE_WEATHER,        ICON_WEATHER,       "天气", 0xF59E0B },
     { CELL_STATIC_PAGE,       PAGE_NOTIFICATIONS,  ICON_NOTIFICATIONS, "通知", 0xFF3B30 },
     { CELL_STATIC_PAGE,       PAGE_MUSIC,          ICON_MUSIC,         "音乐", 0xAF52DE },
     { CELL_STATIC_PAGE,       PAGE_SYSTEM,         ICON_TUNE,          "系统", 0x3C3C43 },
-    { CELL_STATIC_BACKLIGHT,  PAGE_MAX,            ICON_BRIGHTNESS,    "亮度", 0xFF9500 },
-    { CELL_STATIC_PAGE,       PAGE_ABOUT,          ICON_INFO,          "关于", 0x6E6E73 },
+    { CELL_STATIC_PAGE,       PAGE_SETTINGS,       ICON_SETTINGS,      "设置", 0x6E6E73 },
 };
 #define STATIC_DEF_COUNT (int)(sizeof(s_static_defs) / sizeof(s_static_defs[0]))
 
@@ -132,31 +124,12 @@ static void update_dots(void);
  * 行为
  * ========================================================================= */
 
-static void cycle_backlight(void)
-{
-    uint8_t cur = lcd_panel_get_backlight();
-    int idx = 0;
-    int n = (int)(sizeof(BACKLIGHT_STEPS) / sizeof(BACKLIGHT_STEPS[0]));
-    for (int i = 0; i < n; i++) {
-        if (cur <= BACKLIGHT_STEPS[i]) { idx = i; break; }
-        idx = i;
-    }
-    int next = (idx + 1) % n;
-    uint8_t duty = BACKLIGHT_STEPS[next];
-    backlight_storage_set(duty);
-    lcd_panel_set_backlight(duty);
-    ESP_LOGI(TAG, "Backlight -> %d", duty);
-}
-
 static void on_cell_clicked(lv_event_t *e)
 {
     cell_def_t *c = (cell_def_t *)lv_event_get_user_data(e);
     if (!c) return;
 
     switch (c->kind) {
-    case CELL_STATIC_BACKLIGHT:
-        cycle_backlight();
-        break;
     case CELL_STATIC_PAGE:
         page_dynamic_app_cancel_prepare_if_any();
         page_router_switch(c->page_id);

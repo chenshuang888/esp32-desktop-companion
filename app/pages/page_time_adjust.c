@@ -272,7 +272,7 @@ static void on_day_dn(lv_event_t *e)   { adjust_date(0, 0, -1); }
 
 static void on_back_clicked(lv_event_t *e)
 {
-    page_router_switch(PAGE_MENU);
+    page_router_switch(PAGE_SETTINGS);
 }
 
 static void bind_events(void)

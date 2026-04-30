@@ -12,6 +12,7 @@ idf_component_register(
         "pages/page_menu.c"
         "pages/page_menu_modal.c"
         "pages/page_about.c"
+        "pages/page_settings.c"
         "pages/page_weather.c"
         "pages/page_notifications.c"
         "pages/page_music.c"

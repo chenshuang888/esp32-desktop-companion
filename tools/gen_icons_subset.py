@@ -41,6 +41,7 @@ ICONS = {
     "notifications":        0xE7F4,   # 铃铛 → 通知
     "music_note":           0xE405,   # 音符 → 音乐
     "tune":                 0xE429,   # 滑块 → 系统设置
+    "settings":             0xE8B8,   # 齿轮 → 设置 app
     "brightness_5":         0xE1A9,   # 太阳 → 背光亮度
     "info":                 0xE88E,   # ⓘ → 关于
     "edit_calendar":        0xE556,   # 日历笔 → 时间调整
