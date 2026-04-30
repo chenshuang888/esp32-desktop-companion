@@ -6,6 +6,7 @@ idf_component_register(
         # UI 设计系统（token + widgets + anim）
         "ui/ui_widgets.c"
         "ui/ui_anim.c"
+        "ui/ui_statusbar.c"
         "pages/page_time.c"
         "pages/page_time_adjust.c"
         "pages/page_menu.c"
@@ -22,6 +23,7 @@ idf_component_register(
         "ui"
     EMBED_FILES
         "fonts/srhs_sc_subset.ttf"
+        "fonts/material_icons_subset.ttf"
         "icons/ic_clear.bin"
         "icons/ic_cloudy.bin"
         "icons/ic_overcast.bin"

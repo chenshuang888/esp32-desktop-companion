@@ -10,16 +10,42 @@ extern "C" {
 extern lv_font_t *g_app_font_text;
 extern lv_font_t *g_app_font_title;
 extern lv_font_t *g_app_font_huge;
+extern lv_font_t *g_app_font_icons_24;   /* Material Symbols Rounded, 24px */
+extern lv_font_t *g_app_font_icons_36;   /* Material Symbols Rounded, 36px (九宫格) */
 
-#define APP_FONT_TEXT   (g_app_font_text)               /* 正文 14px（CJK TTF 渲染） */
-#define APP_FONT_TITLE  (g_app_font_title)              /* 标题 16px（CJK TTF 渲染） */
-#define APP_FONT_LARGE  (&lv_font_montserrat_24)        /* 大号数字 / ASCII-only */
-#define APP_FONT_HUGE   (g_app_font_huge)               /* 48px 巨号（锁屏时间专用，TTF 渲染） */
+#define APP_FONT_TEXT     (g_app_font_text)               /* 正文 14px */
+#define APP_FONT_TITLE    (g_app_font_title)              /* 标题 16px */
+#define APP_FONT_LARGE    (&lv_font_montserrat_24)        /* 大号数字 / ASCII */
+#define APP_FONT_HUGE     (g_app_font_huge)               /* 48px 巨号 */
+#define APP_FONT_ICONS_24 (g_app_font_icons_24)
+#define APP_FONT_ICONS_36 (g_app_font_icons_36)
 
-/**
- * 初始化字体：从固件嵌入的 TTF 创建 14/16/48 三个 lv_font_t，挂 Montserrat fallback。
- * 必须在 lvgl_port_init() 之后、任何页面 create 之前调用。
+/* ---- Material Symbols Rounded codepoint（UTF-8 字面量）----
+ * 在 lv_label_set_text 里用："ICON_BLUETOOTH" 等。
+ * 注意 label 的 text_font 必须是 g_app_font_icons_*，否则字体里无此字符。
  */
+#define ICON_BLUETOOTH      "\xEE\x86\xA7"   /* U+E1A7 */
+#define ICON_BT_DISABLED    "\xEE\x86\xA8"   /* U+E1A8 */
+#define ICON_BATT_FULL      "\xEE\x86\xA4"   /* U+E1A4 */
+#define ICON_BATT_5BAR      "\xEE\xAF\x9D"   /* U+EBDD */
+#define ICON_BATT_3BAR      "\xEE\xAF\xA0"   /* U+EBE0 */
+#define ICON_BATT_1BAR      "\xEE\xAF\x9C"   /* U+EBDC */
+
+#define ICON_SCHEDULE       "\xEE\xA2\xB5"   /* 时钟 */
+#define ICON_WEATHER        "\xEF\x85\xB2"   /* 多云 */
+#define ICON_NOTIFICATIONS  "\xEE\x9F\xB4"   /* 铃铛 */
+#define ICON_MUSIC          "\xEE\x90\x85"   /* 音符 */
+#define ICON_TUNE           "\xEE\x90\xA9"   /* 滑块（系统）*/
+#define ICON_BRIGHTNESS     "\xEE\x86\xA9"   /* 太阳（亮度）*/
+#define ICON_INFO           "\xEE\xA2\x8E"   /* ⓘ 关于 */
+#define ICON_EDIT_CALENDAR  "\xEE\x95\x96"   /* 时间设置 */
+#define ICON_APPS           "\xEE\x97\x83"   /* 通用 app fallback */
+
+#define ICON_CHEVRON_LEFT   "\xEE\x97\x8B"
+#define ICON_CHEVRON_RIGHT  "\xEE\x97\x8C"
+#define ICON_DOT            "\xEE\xBD\x8A"   /* 大圆点 */
+#define ICON_DOT_SMALL      "\xEE\x81\xA1"   /* 小圆点 */
+
 void app_fonts_init(void);
 
 #ifdef __cplusplus

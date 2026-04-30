@@ -10,6 +10,7 @@ idf_component_register(
         "media_service.c"
         "manager/system_manager.c"
         "system_service.c"
+        "manager/battery_sim.c"
         "dynapp_bridge_service.c"
         "dynapp_upload_service.c"
         "manager/dynapp_upload_manager.c"

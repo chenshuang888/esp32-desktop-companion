@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Menu v1 — 当前列表 baseline</title>
+<link rel="stylesheet" href="../_shared/tokens.css">
+<link rel="stylesheet" href="../_shared/frame.css">
+<style>
+  /* ============================================================================
+   * v1 baseline —— 镜像当前 page_menu.c 的列表布局
+   * 目的：定参考线，对比 v2 九宫格的视觉差异
+   * ========================================================================= */
+
+  .screen { padding: 0; }
+
+  .top-back {
+    height: 40px;
+    display: flex;
+    align-items: center;
+    padding: 0 var(--sp-md);
+    border-bottom: 1px solid rgba(198,198,200,0.4);
+  }
+  .top-back .arrow {
+    color: var(--accent);
+    font-size: 18px;
+  }
+
+  .list { padding: 0 var(--sp-md); }
+  .item {
+    display: flex;
+    align-items: center;
+    padding: var(--sp-md) 0;
+    border-bottom: 1px solid rgba(198,198,200,0.4);
+    gap: var(--sp-md);
+  }
+  .item:last-child { border-bottom: none; }
+  .item .icon {
+    width: 24px;
+    text-align: center;
+    color: var(--accent);
+    font-size: 18px;
+  }
+  .item .label {
+    flex: 1;
+    color: var(--text);
+    font-size: var(--f-body);
+  }
+  .item .value {
+    color: var(--text-muted);
+    font-size: var(--f-body);
+  }
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <div class="meta">v1 · current list (baseline) · 240×320</div>
+  <div class="screen">
+    <div class="top-back">
+      <span class="arrow">‹</span>
+    </div>
+    <div class="list">
+      <div class="item"><span class="icon">📶</span><span class="label">蓝牙</span><span class="value">已连接</span></div>
+      <div class="item"><span class="icon">☀</span><span class="label">背光</span><span class="value">75%</span></div>
+      <div class="item"><span class="icon">⚙</span><span class="label">时间设置</span></div>
+      <div class="item"><span class="icon">☁</span><span class="label">天气</span></div>
+      <div class="item"><span class="icon">🔔</span><span class="label">通知</span></div>
+      <div class="item"><span class="icon">♬</span><span class="label">音乐</span></div>
+      <div class="item"><span class="icon">📊</span><span class="label">系统</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="toolbar">
+  <button id="btn-grid">Toggle 8px Grid</button>
+</div>
+<script>
+  document.getElementById('btn-grid').onclick = function(){
+    document.body.classList.toggle('show-grid');
+    this.classList.toggle('on');
+  };
+</script>
+</body>
+</html>

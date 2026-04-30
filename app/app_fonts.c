@@ -3,45 +3,54 @@
 
 static const char *TAG = "app_fonts";
 
-/* EMBED_FILES 从 app/fonts/srhs_sc_subset.ttf 生成如下符号。
- * 文件名中的 '.' 被替换为 '_'：srhs_sc_subset.ttf → srhs_sc_subset_ttf */
+/* ---- 中文字体 ---- */
 extern const uint8_t srhs_ttf_start[] asm("_binary_srhs_sc_subset_ttf_start");
 extern const uint8_t srhs_ttf_end[]   asm("_binary_srhs_sc_subset_ttf_end");
 
-lv_font_t *g_app_font_text  = NULL;
-lv_font_t *g_app_font_title = NULL;
-lv_font_t *g_app_font_huge  = NULL;
+/* ---- 图标字体（Material Symbols Rounded 子集） ---- */
+extern const uint8_t icons_ttf_start[] asm("_binary_material_icons_subset_ttf_start");
+extern const uint8_t icons_ttf_end[]   asm("_binary_material_icons_subset_ttf_end");
+
+lv_font_t *g_app_font_text     = NULL;
+lv_font_t *g_app_font_title    = NULL;
+lv_font_t *g_app_font_huge     = NULL;
+lv_font_t *g_app_font_icons_24 = NULL;
+lv_font_t *g_app_font_icons_36 = NULL;
 
 void app_fonts_init(void)
 {
-    const size_t ttf_size = srhs_ttf_end - srhs_ttf_start;
-    ESP_LOGI(TAG, "embedded TTF size: %u bytes", (unsigned)ttf_size);
+    const size_t ttf_size   = srhs_ttf_end - srhs_ttf_start;
+    const size_t icons_size = icons_ttf_end - icons_ttf_start;
+    ESP_LOGI(TAG, "embedded TTF: zh=%u B, icons=%u B",
+             (unsigned)ttf_size, (unsigned)icons_size);
 
-    /* Tiny TTF 返回堆分配的 lv_font_t*；内部 glyph cache 由 LVGL malloc 申请。
-     * 开了 LV_USE_CLIB_MALLOC 后大块 cache 自动走 PSRAM。
-     * 对 CJK 文字 kerning 基本无意义，显式关闭节省 cache 空间。 */
-    g_app_font_text = lv_tiny_ttf_create_data_ex(
-        srhs_ttf_start, ttf_size,
-        14, LV_FONT_KERNING_NONE, 256);
-
+    /* 中文 14/16/48 三档（同前） */
+    g_app_font_text  = lv_tiny_ttf_create_data_ex(
+        srhs_ttf_start, ttf_size, 14, LV_FONT_KERNING_NONE, 256);
     g_app_font_title = lv_tiny_ttf_create_data_ex(
-        srhs_ttf_start, ttf_size,
-        16, LV_FONT_KERNING_NONE, 256);
+        srhs_ttf_start, ttf_size, 16, LV_FONT_KERNING_NONE, 256);
+    g_app_font_huge  = lv_tiny_ttf_create_data_ex(
+        srhs_ttf_start, ttf_size, 48, LV_FONT_KERNING_NONE, 32);
 
-    /* 锁屏大号时间 HH:MM 只有 0-9 和 ':' 共 11 个字符，cache 给 32 足够 */
-    g_app_font_huge = lv_tiny_ttf_create_data_ex(
-        srhs_ttf_start, ttf_size,
-        48, LV_FONT_KERNING_NONE, 32);
+    /* Material Symbols 24px（状态栏）+ 36px（九宫格主图标）*/
+    g_app_font_icons_24 = lv_tiny_ttf_create_data_ex(
+        icons_ttf_start, icons_size, 24, LV_FONT_KERNING_NONE, 64);
+    g_app_font_icons_36 = lv_tiny_ttf_create_data_ex(
+        icons_ttf_start, icons_size, 36, LV_FONT_KERNING_NONE, 64);
 
-    if (!g_app_font_text || !g_app_font_title || !g_app_font_huge) {
-        ESP_LOGE(TAG, "lv_tiny_ttf_create_data_ex failed (text=%p title=%p huge=%p)",
-                 g_app_font_text, g_app_font_title, g_app_font_huge);
+    if (!g_app_font_text || !g_app_font_title || !g_app_font_huge
+        || !g_app_font_icons_24 || !g_app_font_icons_36) {
+        ESP_LOGE(TAG, "lv_tiny_ttf_create_data_ex failed (text=%p title=%p huge=%p i24=%p i36=%p)",
+                 g_app_font_text, g_app_font_title, g_app_font_huge,
+                 g_app_font_icons_24, g_app_font_icons_36);
         return;
     }
 
-    /* CJK TTF 不含 FontAwesome 私有区（LV_SYMBOL_* 的 U+F001~U+F8FF），
-     * fallback 到 Montserrat 画 LV_SYMBOL_LEFT / PLAY / BLUETOOTH 等图标。 */
-    g_app_font_text->fallback  = &lv_font_montserrat_14;
-    g_app_font_title->fallback = &lv_font_montserrat_20;
-    g_app_font_huge->fallback  = &lv_font_montserrat_24;
+    /* fallback 链：CJK → Material 图标 → Montserrat (LV_SYMBOL 老图标兜底)
+     * 这样写汉字 / 写 Material 图标 / 写 LV_SYMBOL_LEFT 都能正常显示 */
+    g_app_font_text->fallback     = g_app_font_icons_24;
+    g_app_font_title->fallback    = g_app_font_icons_24;
+    g_app_font_huge->fallback     = g_app_font_icons_36;
+    g_app_font_icons_24->fallback = &lv_font_montserrat_14;
+    g_app_font_icons_36->fallback = &lv_font_montserrat_24;
 }

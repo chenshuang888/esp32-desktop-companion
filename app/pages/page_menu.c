@@ -1,9 +1,16 @@
 #include "page_menu.h"
 #include "page_menu_modal.h"
 #include "page_dynamic_app.h"
+
 #include "esp_log.h"
 #include "lvgl.h"
+
+#include "ui_tokens.h"
+#include "ui_widgets.h"
+#include "ui_anim.h"
+#include "ui_statusbar.h"
 #include "app_fonts.h"
+
 #include "ble_driver.h"
 #include "lcd_panel.h"
 #include "backlight_storage.h"
@@ -16,407 +23,114 @@
 #include <stdbool.h>
 #include <sys/stat.h>
 
-/* ============================================================================
- * 配色（与时间页一致）
- * ========================================================================= */
-
-#define COLOR_BG         0x1E1B2E
-#define COLOR_CARD       0x2D2640
-#define COLOR_CARD_ALT   0x3A3354
-#define COLOR_ACCENT     0x06B6D4
-#define COLOR_TEXT       0xF1ECFF
-#define COLOR_MUTED      0x9B94B5
-#define COLOR_SUCCESS    0x10B981
-#define COLOR_OFFLINE    0x6B7280
-
 static const char *TAG = "page_menu";
 
 /* ============================================================================
- * 数据驱动菜单
+ * 数据驱动的九宫格菜单（v2 设计：状态栏 + 3×3 翻页）
  *
- * 列表项分两类：
- *   1) "静态项"  —— 内建页面或本地行为（蓝牙状态、背光、Time/About 等）
- *      由 s_static_entries[] 描述，回调由 entry->action 决定
- *   2) "动态项"  —— 由 dynamic_app_registry_list() 在 create 时枚举出来
- *      回调统一走 page_dynamic_app_prepare_and_switch(name)
+ * cell 类型：
+ *   STATIC: 内置入口（time/weather/notify/music/system/backlight/about/time_adjust）
+ *   DYNAPP: 动态 app（dynamic_app_registry 枚举），点击进入，长按删除
  *
- * "回调没法写死"通过给每个 lv_obj 关联 user_data 解决：
- *   静态项 user_data = const menu_static_entry_t*
- *   动态项 user_data = char* (堆上的 app 名拷贝，destroy 时释放)
+ * 翻页：
+ *   每页固定 9 格（3×3），cell 总数 ≤9 时只 1 页，>9 时分多页
+ *   翻页用 lv_obj_set_scroll_snap_x(LV_SCROLL_SNAP_CENTER)
+ *   底部点指示器
+ *
+ * 蓝牙状态项：原 page_menu 里有"蓝牙连接状态"项点击 no-op；状态信息已迁到
+ *   状态栏（ui_statusbar），九宫格里**不再保留蓝牙单独入口**。
+ *   未来真要做"蓝牙详情页"时再加回。
+ *
+ * 背光项：保留为单独 cell，点击切档；不再显示当前 % 文字（视觉太碎），
+ *   想看 % 就长按状态栏（未来扩展）
  * ========================================================================= */
+
+#define CELLS_PER_PAGE   9
+#define MAX_DYN_APPS     16
+#define MAX_PAGES        4         /* 9 静态 + 16 动态 = 25 → 3 页够用，多留一页 */
+#define MAX_TOTAL_CELLS  (CELLS_PER_PAGE * MAX_PAGES)
 
 typedef enum {
-    MENU_ACT_PAGE,        /* 切到 entry->page_id */
-    MENU_ACT_BACKLIGHT,   /* 切档背光，不切页 */
-    MENU_ACT_BACK,        /* 返回 PAGE_TIME */
-} menu_action_t;
+    CELL_STATIC_BACKLIGHT,    /* 切背光档 */
+    CELL_STATIC_PAGE,         /* 切到 entry->page_id */
+    CELL_DYNAPP,              /* 进动态 app；user_data = char* (heap copy of name) */
+} cell_kind_t;
 
 typedef struct {
-    const char     *icon;       /* LV_SYMBOL_* 字面量 */
-    const char     *label;      /* 列表文字（英文） */
-    menu_action_t   action;
-    page_id_t       page_id;    /* action == MENU_ACT_PAGE 时有效 */
-    bool            has_value;  /* 右侧是否动态值（蓝牙/背光） */
-} menu_static_entry_t;
-
-/* 内建页静态表。顺序即显示顺序。 */
-static const menu_static_entry_t s_static_entries[] = {
-    { LV_SYMBOL_BLUETOOTH, "Bluetooth",     MENU_ACT_PAGE,      PAGE_TIME /* 占位 */, true  },
-    { LV_SYMBOL_EYE_OPEN,  "Backlight",     MENU_ACT_BACKLIGHT, PAGE_MAX, true  },
-    { LV_SYMBOL_SETTINGS,  "Time & Date",   MENU_ACT_PAGE,      PAGE_TIME_ADJUST,    false },
-    { LV_SYMBOL_IMAGE,     "Weather",       MENU_ACT_PAGE,      PAGE_WEATHER,        false },
-    { LV_SYMBOL_BELL,      "Notifications", MENU_ACT_PAGE,      PAGE_NOTIFICATIONS,  false },
-    { LV_SYMBOL_AUDIO,     "Music",         MENU_ACT_PAGE,      PAGE_MUSIC,          false },
-    { LV_SYMBOL_BARS,      "System",        MENU_ACT_PAGE,      PAGE_SYSTEM,         false },
-};
-#define STATIC_ENTRY_COUNT  (int)(sizeof(s_static_entries) / sizeof(s_static_entries[0]))
-
-/* 蓝牙状态项是个特例：它有右侧动态文字但点击行为是"不动"（暂时）。
- * 上面表里 page_id 写了 PAGE_TIME 占位但不会真的切——后面 on_static_clicked
- * 会显式把它当 no-op 处理。这样能把"有动态值"的两项保持在表里，
- * 不用为它单独切代码路径。 */
-#define STATIC_INDEX_BT       0
-#define STATIC_INDEX_BL       1
-
-/* 单个 app 名最大长度（含 \0），与 dynamic_app_registry 对齐。 */
-#define APP_NAME_BUF_LEN  (DYNAPP_REGISTRY_NAME_MAX + 1)
-
-/* About 项始终在最后一行；和 s_static_entries 共用 create_list_item，
- * 但回调路径不同（要 cancel_prepare 然后切 PAGE_ABOUT）。
- * 单独处理而非进表，避免 menu_action_t 再加一个枚举值。 */
+    cell_kind_t   kind;
+    page_id_t     page_id;     /* CELL_STATIC_PAGE 时有效 */
+    const char   *icon;        /* Material icon UTF-8 字面量；DYNAPP 用 ICON_APPS */
+    const char   *label;       /* 显示中文名 */
+    lv_color_t    color;       /* icon 颜色（一图一色）*/
+    char         *dyn_name;    /* CELL_DYNAPP 时持有 strdup */
+    bool          dyn_has_image;     /* 动态 app 是否有 icon.bin */
+    char          dyn_icon_path[80]; /* "A:/littlefs/apps/<id>/icon.bin" */
+} cell_def_t;
 
 /* ============================================================================
- * UI 元素
+ * UI state
  * ========================================================================= */
-
-#define MAX_DYN_APPS  16  /* 实际用 dynamic_app_registry 列出来的数量 */
 
 typedef struct {
     lv_obj_t *screen;
-    lv_obj_t *back_btn;
-    lv_obj_t *list;          /* 列表容器（带 flex column） */
+    lv_obj_t *statusbar;       /* ui_statusbar */
+    lv_obj_t *pager;           /* 横向 scroll snap 容器，每页 240 宽 */
+    lv_obj_t *dots_box;        /* 底部分页指示器 */
 
-    lv_obj_t *bt_status_lbl; /* 蓝牙状态文字: "Connected"/"Off" */
-    lv_obj_t *bl_value_lbl;  /* 背光亮度文字: "50%" */
-
-    /* 动态 app 入口的"app 名拷贝"。释放时回收。 */
-    char     *dyn_names[MAX_DYN_APPS];
-    int       dyn_count;
-
-    lv_style_t style_card;
-    lv_style_t style_item;
-    lv_style_t style_item_pressed;
-    lv_style_t style_topbtn;
-    lv_style_t style_topbtn_pressed;
+    cell_def_t cells[MAX_TOTAL_CELLS];
+    int        cell_count;
+    int        page_count;
+    int        active_page;    /* 当前显示页（用于点指示器高亮）*/
 } page_menu_ui_t;
 
 static page_menu_ui_t s_ui = {0};
+static volatile bool  s_dirty = false;
 
-/* 上传/删除完成 → 菜单刷新通知 flag。
- * - manager consumer task 在 commit/delete 成功时 set
- * - UI 线程的 page_menu_update() poll 并清，重建动态项列表
- * 不能直接在 cb 里动 LVGL（跨线程崩溃）。 */
-static volatile bool s_dirty = false;
-
-/* 背光四档: 25% / 50% / 75% / 100% */
+/* 背光四档 */
 static const uint8_t BACKLIGHT_STEPS[] = {64, 128, 192, 255};
 
+/* ============================================================================
+ * 静态 cell 定义表（顺序即排版顺序）
+ *
+ * 与原 page_menu 区别：
+ *   - 删了"Bluetooth"入口（状态已上状态栏，无独立详情页）
+ *   - 删了 backlight 的 "%" 显示（视觉太碎；点一下就切，看 LED 反馈即可）
+ *   - 顺序按"高频在前 + 同类型相邻"重排
+ * ========================================================================= */
+
+typedef struct {
+    cell_kind_t  kind;
+    page_id_t    page_id;
+    const char  *icon;
+    const char  *label;
+    uint32_t     color_hex;
+} static_cell_def_t;
+
+/* iOS 风一图一色，跟 mockup 配色一致 */
+static const static_cell_def_t s_static_defs[] = {
+    { CELL_STATIC_PAGE,       PAGE_TIME_ADJUST,    ICON_EDIT_CALENDAR, "时间", 0x5AC8FA },
+    { CELL_STATIC_PAGE,       PAGE_WEATHER,        ICON_WEATHER,       "天气", 0xF59E0B },
+    { CELL_STATIC_PAGE,       PAGE_NOTIFICATIONS,  ICON_NOTIFICATIONS, "通知", 0xFF3B30 },
+    { CELL_STATIC_PAGE,       PAGE_MUSIC,          ICON_MUSIC,         "音乐", 0xAF52DE },
+    { CELL_STATIC_PAGE,       PAGE_SYSTEM,         ICON_TUNE,          "系统", 0x3C3C43 },
+    { CELL_STATIC_BACKLIGHT,  PAGE_MAX,            ICON_BRIGHTNESS,    "亮度", 0xFF9500 },
+    { CELL_STATIC_PAGE,       PAGE_ABOUT,          ICON_INFO,          "关于", 0x6E6E73 },
+};
+#define STATIC_DEF_COUNT (int)(sizeof(s_static_defs) / sizeof(s_static_defs[0]))
+
+static const lv_color_t DYNAPP_COLOR = LV_COLOR_MAKE(0x34, 0xC7, 0x59);  /* 绿 */
+
 /* 前向声明 */
-static void on_static_clicked(lv_event_t *e);
-static void on_dyn_clicked(lv_event_t *e);
-static void on_dyn_long_pressed(lv_event_t *e);
-static void on_about_clicked(lv_event_t *e);
-static void on_back_clicked(lv_event_t *e);
-static void update_bt_status(void);
-static void update_backlight_label(void);
-static void rebuild_dynamic_items(void);
+static void on_cell_clicked(lv_event_t *e);
+static void on_cell_long_pressed(lv_event_t *e);
+static void on_pager_scroll(lv_event_t *e);
+static void rebuild_cells(void);
+static void rebuild_layout(void);
+static void update_dots(void);
 
 /* ============================================================================
- * CSS - 样式
+ * 行为
  * ========================================================================= */
-
-static void init_styles(void)
-{
-    lv_style_init(&s_ui.style_card);
-    lv_style_set_bg_color(&s_ui.style_card, lv_color_hex(COLOR_CARD));
-    lv_style_set_bg_opa(&s_ui.style_card, LV_OPA_COVER);
-    lv_style_set_radius(&s_ui.style_card, 12);
-    lv_style_set_border_width(&s_ui.style_card, 0);
-    lv_style_set_pad_all(&s_ui.style_card, 0);
-    lv_style_set_shadow_width(&s_ui.style_card, 0);
-
-    lv_style_init(&s_ui.style_item);
-    lv_style_set_bg_opa(&s_ui.style_item, LV_OPA_TRANSP);
-    lv_style_set_border_width(&s_ui.style_item, 1);
-    lv_style_set_border_side(&s_ui.style_item, LV_BORDER_SIDE_BOTTOM);
-    lv_style_set_border_color(&s_ui.style_item, lv_color_hex(COLOR_CARD_ALT));
-    lv_style_set_radius(&s_ui.style_item, 0);
-    lv_style_set_shadow_width(&s_ui.style_item, 0);
-    lv_style_set_pad_all(&s_ui.style_item, 0);
-    lv_style_set_text_color(&s_ui.style_item, lv_color_hex(COLOR_TEXT));
-    lv_style_set_text_font(&s_ui.style_item, APP_FONT_TEXT);
-
-    lv_style_init(&s_ui.style_item_pressed);
-    lv_style_set_bg_color(&s_ui.style_item_pressed, lv_color_hex(COLOR_ACCENT));
-    lv_style_set_bg_opa(&s_ui.style_item_pressed, LV_OPA_20);
-
-    lv_style_init(&s_ui.style_topbtn);
-    lv_style_set_bg_opa(&s_ui.style_topbtn, LV_OPA_TRANSP);
-    lv_style_set_border_width(&s_ui.style_topbtn, 0);
-    lv_style_set_shadow_width(&s_ui.style_topbtn, 0);
-    lv_style_set_text_color(&s_ui.style_topbtn, lv_color_hex(COLOR_ACCENT));
-    lv_style_set_pad_all(&s_ui.style_topbtn, 4);
-
-    lv_style_init(&s_ui.style_topbtn_pressed);
-    lv_style_set_bg_color(&s_ui.style_topbtn_pressed, lv_color_hex(COLOR_ACCENT));
-    lv_style_set_bg_opa(&s_ui.style_topbtn_pressed, LV_OPA_20);
-}
-
-/* ============================================================================
- * HTML - 布局
- *
- * value_init / value_color：
- *   - 非 NULL：右侧画一个值 label，指针通过 *out_value_label 回传
- *   - NULL  且 out_value_label == NULL：画一个 ">" 箭头占位
- *   - NULL  且 out_value_label != NULL：什么都不画（用于动态 app 项）
- * ========================================================================= */
-
-static lv_obj_t *create_list_item(lv_obj_t *parent,
-                                  const char *icon,
-                                  const char *text,
-                                  lv_obj_t **out_value_label,
-                                  const char *value_init,
-                                  uint32_t value_color,
-                                  bool last)
-{
-    lv_obj_t *item = lv_btn_create(parent);
-    lv_obj_remove_style_all(item);
-    lv_obj_add_style(item, &s_ui.style_item, 0);
-    lv_obj_add_style(item, &s_ui.style_item_pressed, LV_STATE_PRESSED);
-    lv_obj_set_size(item, lv_pct(100), 50);
-    lv_obj_clear_flag(item, LV_OBJ_FLAG_SCROLLABLE);
-
-    if (last) {
-        lv_obj_set_style_border_width(item, 0, 0);
-    }
-
-    lv_obj_t *icon_lbl = lv_label_create(item);
-    lv_label_set_text(icon_lbl, icon);
-    lv_obj_set_style_text_color(icon_lbl, lv_color_hex(COLOR_ACCENT), 0);
-    lv_obj_set_style_text_font(icon_lbl, APP_FONT_TITLE, 0);
-    lv_obj_align(icon_lbl, LV_ALIGN_LEFT_MID, 14, 0);
-
-    lv_obj_t *text_lbl = lv_label_create(item);
-    lv_label_set_text(text_lbl, text);
-    lv_obj_set_style_text_color(text_lbl, lv_color_hex(COLOR_TEXT), 0);
-    lv_obj_set_style_text_font(text_lbl, APP_FONT_TEXT, 0);
-    lv_obj_align(text_lbl, LV_ALIGN_LEFT_MID, 48, 0);
-
-    if (value_init) {
-        lv_obj_t *val = lv_label_create(item);
-        lv_label_set_text(val, value_init);
-        lv_obj_set_style_text_color(val, lv_color_hex(value_color), 0);
-        lv_obj_set_style_text_font(val, APP_FONT_TEXT, 0);
-        lv_obj_align(val, LV_ALIGN_RIGHT_MID, -14, 0);
-        if (out_value_label) *out_value_label = val;
-    } else if (out_value_label == NULL) {
-        lv_obj_t *arrow = lv_label_create(item);
-        lv_label_set_text(arrow, LV_SYMBOL_RIGHT);
-        lv_obj_set_style_text_color(arrow, lv_color_hex(COLOR_MUTED), 0);
-        lv_obj_set_style_text_font(arrow, APP_FONT_TEXT, 0);
-        lv_obj_align(arrow, LV_ALIGN_RIGHT_MID, -14, 0);
-    }
-
-    return item;
-}
-
-/* 给动态 app 用的"图片图标"版本：image_path 是 LVGL FS 路径
- *   "A:/littlefs/apps/<id>/icon.bin"
- * 约定 32×32；放不下时 LVGL 会按 image 原始尺寸渲染，不强制缩放。
- *
- * 与 create_list_item 的差别：
- *   - 左侧用 lv_image 替代 SYMBOL label
- *   - 不返回 value/arrow（动态 app 项一律不需要）
- *   - 仅供 create_dynamic_items 内部使用 */
-static lv_obj_t *create_list_item_with_image_icon(lv_obj_t *parent,
-                                                   const char *image_path,
-                                                   const char *text,
-                                                   bool last)
-{
-    lv_obj_t *item = lv_btn_create(parent);
-    lv_obj_remove_style_all(item);
-    lv_obj_add_style(item, &s_ui.style_item, 0);
-    lv_obj_add_style(item, &s_ui.style_item_pressed, LV_STATE_PRESSED);
-    lv_obj_set_size(item, lv_pct(100), 50);
-    lv_obj_clear_flag(item, LV_OBJ_FLAG_SCROLLABLE);
-
-    if (last) {
-        lv_obj_set_style_border_width(item, 0, 0);
-    }
-
-    /* 32×32 图标，与 SYMBOL 版本占位一致（label 默认中心对齐到 LEFT_MID 14,0） */
-    lv_obj_t *icon_img = lv_image_create(item);
-    lv_image_set_src(icon_img, image_path);
-    lv_obj_align(icon_img, LV_ALIGN_LEFT_MID, 6, 0);
-
-    lv_obj_t *text_lbl = lv_label_create(item);
-    lv_label_set_text(text_lbl, text);
-    lv_obj_set_style_text_color(text_lbl, lv_color_hex(COLOR_TEXT), 0);
-    lv_obj_set_style_text_font(text_lbl, APP_FONT_TEXT, 0);
-    lv_obj_align(text_lbl, LV_ALIGN_LEFT_MID, 48, 0);
-
-    return item;
-}
-
-static void create_top_bar(void)
-{
-    s_ui.back_btn = lv_btn_create(s_ui.screen);
-    lv_obj_remove_style_all(s_ui.back_btn);
-    lv_obj_add_style(s_ui.back_btn, &s_ui.style_topbtn, 0);
-    lv_obj_add_style(s_ui.back_btn, &s_ui.style_topbtn_pressed, LV_STATE_PRESSED);
-    lv_obj_set_style_radius(s_ui.back_btn, 6, 0);
-    lv_obj_set_size(s_ui.back_btn, 80, 30);
-    lv_obj_align(s_ui.back_btn, LV_ALIGN_TOP_LEFT, 10, 10);
-
-    lv_obj_t *arrow = lv_label_create(s_ui.back_btn);
-    lv_label_set_text(arrow, LV_SYMBOL_LEFT " Menu");
-    lv_obj_set_style_text_font(arrow, APP_FONT_TEXT, 0);
-    lv_obj_center(arrow);
-
-    lv_obj_add_event_cb(s_ui.back_btn, on_back_clicked, LV_EVENT_CLICKED, NULL);
-}
-
-/* 显示名 hook：单源化后所有动态 app 都来自 FS。当前直接返回 entry.display
- * （由 dynamic_app_registry 从 manifest.json 读出，缺失时回退 app_id）。 */
-static const char *display_name_for_app(const char *display)
-{
-    return display;
-}
-
-/* 图标 hook：同上。当前所有动态 app 用通用 list 图标。 */
-static const char *icon_for_app(const char *name)
-{
-    (void)name;
-    return LV_SYMBOL_LIST;
-}
-
-static void create_static_items(lv_obj_t *card)
-{
-    for (int i = 0; i < STATIC_ENTRY_COUNT; i++) {
-        const menu_static_entry_t *e = &s_static_entries[i];
-
-        lv_obj_t **out_label = NULL;
-        const char *init_val = NULL;
-        uint32_t    init_clr = 0;
-
-        if (i == STATIC_INDEX_BT) { out_label = &s_ui.bt_status_lbl; init_val = "Off"; init_clr = COLOR_OFFLINE; }
-        if (i == STATIC_INDEX_BL) { out_label = &s_ui.bl_value_lbl;  init_val = "50%"; init_clr = COLOR_ACCENT;  }
-
-        lv_obj_t *item = create_list_item(card,
-            e->icon, e->label,
-            out_label, init_val, init_clr,
-            /*last=*/false);
-
-        /* 把 entry 指针挂到 user_data；on_static_clicked 用它分支 */
-        lv_obj_add_event_cb(item, on_static_clicked, LV_EVENT_CLICKED, (void *)e);
-    }
-}
-
-static void create_dynamic_items(lv_obj_t *card)
-{
-    dynamic_app_entry_t entries[MAX_DYN_APPS];
-    int n = dynamic_app_registry_list(entries, MAX_DYN_APPS);
-    ESP_LOGI(TAG, "dynamic apps discovered: %d", n);
-
-    s_ui.dyn_count = 0;
-    for (int i = 0; i < n; i++) {
-        /* heap 拷贝 app_id：作为 lv_obj 的 user_data，destroy 时回收。
-         * 显示名走 manifest.name（缺失时 entry.display == entry.id）。 */
-        char *copy = strdup(entries[i].id);
-        if (!copy) {
-            ESP_LOGW(TAG, "OOM copying app id %s", entries[i].id);
-            continue;
-        }
-
-        /* 尝试加载 app 自带图标 /littlefs/apps/<id>/icon.bin
-         *   存在 → 用 lv_image 节点（约定 32×32 RGB565）
-         *   不存在 → 回退到内置 LV_SYMBOL_LIST */
-        char fs_path[80];
-        snprintf(fs_path, sizeof(fs_path),
-                 "/littlefs/apps/%s/icon.bin", entries[i].id);
-        struct stat st;
-        bool has_icon = (stat(fs_path, &st) == 0 && S_ISREG(st.st_mode));
-
-        lv_obj_t *item;
-        if (has_icon) {
-            char lv_path[88];
-            snprintf(lv_path, sizeof(lv_path), "A:%s", fs_path);
-            item = create_list_item_with_image_icon(card,
-                lv_path,
-                display_name_for_app(entries[i].display),
-                /*last=*/false);
-        } else {
-            item = create_list_item(card,
-                icon_for_app(entries[i].id),
-                display_name_for_app(entries[i].display),
-                /*out=*/NULL, /*val=*/NULL, /*clr=*/0,
-                /*last=*/false);
-        }
-
-        lv_obj_add_event_cb(item, on_dyn_clicked, LV_EVENT_CLICKED, copy);
-        lv_obj_add_event_cb(item, on_dyn_long_pressed, LV_EVENT_LONG_PRESSED, copy);
-        s_ui.dyn_names[s_ui.dyn_count++] = copy;
-    }
-}
-
-static void create_about_item(lv_obj_t *card)
-{
-    lv_obj_t *item = create_list_item(card,
-        LV_SYMBOL_LIST, "About",
-        NULL, NULL, 0, /*last=*/true);
-    lv_obj_add_event_cb(item, on_about_clicked, LV_EVENT_CLICKED, NULL);
-}
-
-static void create_menu_list(void)
-{
-    s_ui.list = lv_obj_create(s_ui.screen);
-    lv_obj_remove_style_all(s_ui.list);
-    lv_obj_add_style(s_ui.list, &s_ui.style_card, 0);
-    lv_obj_set_size(s_ui.list, 220, 250);   /* 视窗 250，超过会滚动 */
-    lv_obj_align(s_ui.list, LV_ALIGN_TOP_MID, 0, 50);
-
-    lv_obj_set_flex_flow(s_ui.list, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(s_ui.list,
-        LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(s_ui.list, 0, 0);
-
-    create_static_items(s_ui.list);
-    create_dynamic_items(s_ui.list);
-    create_about_item(s_ui.list);
-}
-
-/* ============================================================================
- * 业务逻辑
- * ========================================================================= */
-
-static void update_bt_status(void)
-{
-    if (!s_ui.bt_status_lbl) return;
-    bool connected = ble_driver_is_connected();
-    lv_label_set_text(s_ui.bt_status_lbl, connected ? "Connected" : "Off");
-    lv_obj_set_style_text_color(s_ui.bt_status_lbl,
-        lv_color_hex(connected ? COLOR_SUCCESS : COLOR_OFFLINE), 0);
-}
-
-static void update_backlight_label(void)
-{
-    if (!s_ui.bl_value_lbl) return;
-    uint8_t duty = lcd_panel_get_backlight();
-    int pct = (duty * 100 + 127) / 255;
-    char buf[8];
-    snprintf(buf, sizeof(buf), "%d%%", pct);
-    lv_label_set_text(s_ui.bl_value_lbl, buf);
-}
 
 static void cycle_backlight(void)
 {
@@ -429,69 +143,32 @@ static void cycle_backlight(void)
     }
     int next = (idx + 1) % n;
     uint8_t duty = BACKLIGHT_STEPS[next];
-
     backlight_storage_set(duty);
     lcd_panel_set_backlight(duty);
-
-    update_backlight_label();
     ESP_LOGI(TAG, "Backlight -> %d", duty);
 }
 
-/* ============================================================================
- * 事件回调
- *
- * 凡是离开 menu 的入口，都先调一次 page_dynamic_app_cancel_prepare_if_any()。
- * 因为用户可能刚点了某个动态 app（后台 prepare 中），又改主意点了别的入口 ——
- * 必须先把进行中的 prepare 撤掉，否则脚本会继续往不存在的 root 灌命令。
- * ========================================================================= */
-
-static void on_back_clicked(lv_event_t *e)
+static void on_cell_clicked(lv_event_t *e)
 {
-    (void)e;
-    page_dynamic_app_cancel_prepare_if_any();
-    page_router_switch(PAGE_TIME);
-}
+    cell_def_t *c = (cell_def_t *)lv_event_get_user_data(e);
+    if (!c) return;
 
-static void on_about_clicked(lv_event_t *e)
-{
-    (void)e;
-    page_dynamic_app_cancel_prepare_if_any();
-    page_router_switch(PAGE_ABOUT);
-}
-
-static void on_static_clicked(lv_event_t *e)
-{
-    const menu_static_entry_t *entry =
-        (const menu_static_entry_t *)lv_event_get_user_data(e);
-    if (!entry) return;
-
-    switch (entry->action) {
-    case MENU_ACT_BACKLIGHT:
+    switch (c->kind) {
+    case CELL_STATIC_BACKLIGHT:
         cycle_backlight();
         break;
-    case MENU_ACT_PAGE:
-        /* 蓝牙项当前没目的页（page_id 是占位），点击 no-op */
-        if (entry == &s_static_entries[STATIC_INDEX_BT]) return;
+    case CELL_STATIC_PAGE:
         page_dynamic_app_cancel_prepare_if_any();
-        page_router_switch(entry->page_id);
+        page_router_switch(c->page_id);
         break;
-    case MENU_ACT_BACK:
-        page_dynamic_app_cancel_prepare_if_any();
-        page_router_switch(PAGE_TIME);
+    case CELL_DYNAPP:
+        if (c->dyn_name) {
+            page_dynamic_app_prepare_and_switch(c->dyn_name);
+        }
         break;
     }
 }
 
-static void on_dyn_clicked(lv_event_t *e)
-{
-    const char *name = (const char *)lv_event_get_user_data(e);
-    if (!name) return;
-    page_dynamic_app_prepare_and_switch(name);
-}
-
-/* 长按动态项 → 弹删除确认。
- * 本地删除直接走 fs_worker（绕开 BLE 协议层）；done cb 里 set s_dirty
- * 让 UI 线程下一帧重建列表。fs_worker 内部会调 running_check，运行中拒删。 */
 static void on_local_delete_done(esp_err_t result, void *cb_arg)
 {
     (void)cb_arg;
@@ -511,30 +188,254 @@ static void on_delete_confirmed(void *ud)
     }
 }
 
-static void on_dyn_long_pressed(lv_event_t *e)
+static void on_cell_long_pressed(lv_event_t *e)
 {
-    const char *name = (const char *)lv_event_get_user_data(e);
-    if (!name) return;
+    cell_def_t *c = (cell_def_t *)lv_event_get_user_data(e);
+    if (!c || c->kind != CELL_DYNAPP || !c->dyn_name) return;
 
-    /* 抑制后续 CLICKED：LVGL v9 中 LONG_PRESSED 触发后，手指抬起仍会发 CLICKED，
-     * 会导致"弹出删除框的同时进入 app"的双触。lv_indev_wait_release 让 indev
-     * 直到下次按下前都忽略当前手势的 release，从根上断掉 CLICKED。 */
     lv_indev_t *indev = lv_event_get_indev(e);
     if (indev) lv_indev_wait_release(indev);
 
-    /* name 直接当 user_data 传——它在 s_ui.dyn_names[] 里持有，
-     * 直到 page_menu_destroy 或 rebuild_dynamic_items 才 free。
-     * modal 是 UI 线程同步交互，用户点 Delete 时 item 仍存活，name 有效。 */
-    menu_modal_show_delete_confirm(name, on_delete_confirmed, (void *)name);
+    menu_modal_show_delete_confirm(c->dyn_name, on_delete_confirmed, c->dyn_name);
 }
 
 /* ============================================================================
- * 热刷新：上传完成 / 删除完成时，菜单页若 active 自动重建动态项
- *
- * 链路：
- *   manager consumer task → on_upload_status (cb，禁碰 LVGL，仅 set s_dirty)
- *                        ↓
- *   UI 线程 page_menu_update → poll s_dirty → rebuild_dynamic_items
+ * cell 列表构建（数据层，不碰 LVGL）
+ * ========================================================================= */
+
+static void cells_clear(void)
+{
+    for (int i = 0; i < s_ui.cell_count; i++) {
+        if (s_ui.cells[i].dyn_name) {
+            free(s_ui.cells[i].dyn_name);
+            s_ui.cells[i].dyn_name = NULL;
+        }
+    }
+    memset(s_ui.cells, 0, sizeof(s_ui.cells));
+    s_ui.cell_count = 0;
+}
+
+static void cells_collect(void)
+{
+    cells_clear();
+
+    /* 静态 cell */
+    for (int i = 0; i < STATIC_DEF_COUNT; i++) {
+        if (s_ui.cell_count >= MAX_TOTAL_CELLS) break;
+        cell_def_t *c = &s_ui.cells[s_ui.cell_count++];
+        c->kind     = s_static_defs[i].kind;
+        c->page_id  = s_static_defs[i].page_id;
+        c->icon     = s_static_defs[i].icon;
+        c->label    = s_static_defs[i].label;
+        c->color    = lv_color_hex(s_static_defs[i].color_hex);
+        c->dyn_name = NULL;
+    }
+
+    /* 动态 cell */
+    dynamic_app_entry_t entries[MAX_DYN_APPS];
+    int n = dynamic_app_registry_list(entries, MAX_DYN_APPS);
+    ESP_LOGI(TAG, "dynamic apps discovered: %d", n);
+    for (int i = 0; i < n && s_ui.cell_count < MAX_TOTAL_CELLS; i++) {
+        cell_def_t *c = &s_ui.cells[s_ui.cell_count++];
+        c->kind     = CELL_DYNAPP;
+        c->page_id  = PAGE_MAX;
+        c->icon     = ICON_APPS;
+        c->label    = entries[i].display;
+        c->color    = DYNAPP_COLOR;
+        c->dyn_name = strdup(entries[i].id);
+
+        /* 检查 app 是否带 icon.bin */
+        snprintf(c->dyn_icon_path, sizeof(c->dyn_icon_path),
+                 "/littlefs/apps/%s/icon.bin", entries[i].id);
+        struct stat st;
+        c->dyn_has_image = (stat(c->dyn_icon_path, &st) == 0 && S_ISREG(st.st_mode));
+        if (c->dyn_has_image) {
+            /* 转成 LVGL FS 路径 "A:/..." 供 lv_image_set_src 使用 */
+            char tmp[88];
+            snprintf(tmp, sizeof(tmp), "A:%s", c->dyn_icon_path);
+            strncpy(c->dyn_icon_path, tmp, sizeof(c->dyn_icon_path) - 1);
+            c->dyn_icon_path[sizeof(c->dyn_icon_path) - 1] = '\0';
+        }
+    }
+
+    /* 算页数 —— 至少 1 页（即使 0 个 app） */
+    s_ui.page_count = (s_ui.cell_count + CELLS_PER_PAGE - 1) / CELLS_PER_PAGE;
+    if (s_ui.page_count < 1) s_ui.page_count = 1;
+}
+
+/* ============================================================================
+ * LVGL 视图层
+ * ========================================================================= */
+
+/* 单个 cell 视觉：80×88 透明按钮 + 36px 图标 + 14px 标签 */
+static lv_obj_t *create_cell_obj(lv_obj_t *parent, cell_def_t *c)
+{
+    lv_obj_t *btn = lv_btn_create(parent);
+    lv_obj_remove_style_all(btn);
+    lv_obj_set_size(btn, 80, 88);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_radius(btn, UI_R_MD, 0);
+    lv_obj_set_style_bg_color(btn, UI_C_PANEL_HI, LV_STATE_PRESSED);
+    lv_obj_set_style_bg_opa  (btn, LV_OPA_60,    LV_STATE_PRESSED);
+    lv_obj_clear_flag(btn, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* 内部纵向 flex：图标 + 标签 */
+    lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(btn, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_row(btn, UI_SP_XS, 0);
+    lv_obj_set_style_pad_all(btn, 0, 0);
+
+    /* 图标 —— 动态 app 有 icon.bin 时用 image，否则用字体图标 */
+    if (c->kind == CELL_DYNAPP && c->dyn_has_image) {
+        lv_obj_t *img = lv_image_create(btn);
+        lv_image_set_src(img, c->dyn_icon_path);
+        /* 32×32 的 icon.bin scale 1024 显示 36×36 略大，保持 1× 即可 */
+    } else {
+        lv_obj_t *icon = lv_label_create(btn);
+        lv_label_set_text(icon, c->icon);
+        lv_obj_set_style_text_font (icon, APP_FONT_ICONS_36, 0);
+        lv_obj_set_style_text_color(icon, c->color, 0);
+    }
+
+    lv_obj_t *lbl = lv_label_create(btn);
+    lv_label_set_text(lbl, c->label);
+    lv_obj_set_style_text_font (lbl, UI_F_LABEL, 0);
+    lv_obj_set_style_text_color(lbl, UI_C_TEXT, 0);
+
+    /* 事件回调：cell_def_t* 作为 user_data */
+    lv_obj_add_event_cb(btn, on_cell_clicked,      LV_EVENT_CLICKED,      c);
+    lv_obj_add_event_cb(btn, on_cell_long_pressed, LV_EVENT_LONG_PRESSED, c);
+    return btn;
+}
+
+/* 一个 240 宽的 page，内部 3×3 网格 */
+static lv_obj_t *create_page_obj(lv_obj_t *parent, int page_idx)
+{
+    lv_obj_t *page = lv_obj_create(parent);
+    lv_obj_remove_style_all(page);
+    lv_obj_set_size(page, 240, lv_pct(100));
+    lv_obj_set_style_bg_opa(page, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_pad_all(page, 0, 0);
+    lv_obj_clear_flag(page, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* 3 列 ×3 行 grid */
+    static int32_t col_dsc[] = { 80, 80, 80, LV_GRID_TEMPLATE_LAST };
+    static int32_t row_dsc[] = { 88, 88, 88, LV_GRID_TEMPLATE_LAST };
+    lv_obj_set_grid_dsc_array(page, col_dsc, row_dsc);
+    lv_obj_set_layout(page, LV_LAYOUT_GRID);
+
+    int start = page_idx * CELLS_PER_PAGE;
+    int end   = start + CELLS_PER_PAGE;
+    if (end > s_ui.cell_count) end = s_ui.cell_count;
+
+    for (int i = start; i < end; i++) {
+        int slot = i - start;
+        int row  = slot / 3;
+        int col  = slot % 3;
+        lv_obj_t *cell = create_cell_obj(page, &s_ui.cells[i]);
+        lv_obj_set_grid_cell(cell,
+            LV_GRID_ALIGN_CENTER, col, 1,
+            LV_GRID_ALIGN_CENTER, row, 1);
+    }
+    return page;
+}
+
+/* ============================================================================
+ * 翻页指示器
+ * ========================================================================= */
+
+static void update_dots(void)
+{
+    if (!s_ui.dots_box) return;
+    uint32_t n = lv_obj_get_child_count(s_ui.dots_box);
+    for (uint32_t i = 0; i < n; i++) {
+        lv_obj_t *dot = lv_obj_get_child(s_ui.dots_box, i);
+        bool active = ((int)i == s_ui.active_page);
+        lv_obj_set_style_bg_color(dot, active ? UI_C_TEXT : UI_C_BORDER, 0);
+    }
+}
+
+static void create_dots(lv_obj_t *parent)
+{
+    s_ui.dots_box = lv_obj_create(parent);
+    lv_obj_remove_style_all(s_ui.dots_box);
+    lv_obj_set_size(s_ui.dots_box, 240, 16);
+    lv_obj_align(s_ui.dots_box, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_bg_opa(s_ui.dots_box, LV_OPA_TRANSP, 0);
+    lv_obj_clear_flag(s_ui.dots_box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_flow(s_ui.dots_box, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(s_ui.dots_box,
+        LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(s_ui.dots_box, 6, 0);
+
+    for (int i = 0; i < s_ui.page_count; i++) {
+        lv_obj_t *dot = lv_obj_create(s_ui.dots_box);
+        lv_obj_remove_style_all(dot);
+        lv_obj_set_size(dot, 6, 6);
+        lv_obj_set_style_radius(dot, 1000, 0);  /* 圆 */
+        lv_obj_set_style_bg_color(dot, UI_C_BORDER, 0);
+        lv_obj_set_style_bg_opa  (dot, LV_OPA_COVER, 0);
+    }
+    update_dots();
+}
+
+static void on_pager_scroll(lv_event_t *e)
+{
+    int32_t scroll_x = lv_obj_get_scroll_x(s_ui.pager);
+    int new_page = (scroll_x + 120) / 240;   /* 半页吸附 */
+    if (new_page < 0) new_page = 0;
+    if (new_page >= s_ui.page_count) new_page = s_ui.page_count - 1;
+    if (new_page != s_ui.active_page) {
+        s_ui.active_page = new_page;
+        update_dots();
+    }
+}
+
+/* ============================================================================
+ * 主 layout（重建用）
+ * ========================================================================= */
+
+static void rebuild_layout(void)
+{
+    /* 清空 pager + dots，但保留 statusbar */
+    if (s_ui.pager)    { lv_obj_del(s_ui.pager);    s_ui.pager = NULL; }
+    if (s_ui.dots_box) { lv_obj_del(s_ui.dots_box); s_ui.dots_box = NULL; }
+
+    /* pager 容器：横向 scroll snap */
+    s_ui.pager = lv_obj_create(s_ui.screen);
+    lv_obj_remove_style_all(s_ui.pager);
+    /* 状态栏 24px，分页指示 16px，留 280px 给主体 */
+    lv_obj_set_size(s_ui.pager, 240, 280);
+    lv_obj_align(s_ui.pager, LV_ALIGN_TOP_MID, 0, 24);
+    lv_obj_set_style_bg_opa(s_ui.pager, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_pad_all(s_ui.pager, 0, 0);
+    lv_obj_set_flex_flow(s_ui.pager, LV_FLEX_FLOW_ROW);
+    lv_obj_set_scroll_dir(s_ui.pager, LV_DIR_HOR);
+    lv_obj_set_scroll_snap_x(s_ui.pager, LV_SCROLL_SNAP_CENTER);
+    lv_obj_set_scrollbar_mode(s_ui.pager, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_add_event_cb(s_ui.pager, on_pager_scroll, LV_EVENT_SCROLL, NULL);
+
+    for (int i = 0; i < s_ui.page_count; i++) {
+        create_page_obj(s_ui.pager, i);
+    }
+
+    /* 重建后保持当前页（避免重建后跳回 0）*/
+    if (s_ui.active_page >= s_ui.page_count) s_ui.active_page = s_ui.page_count - 1;
+    if (s_ui.active_page < 0) s_ui.active_page = 0;
+    lv_obj_scroll_to_x(s_ui.pager, s_ui.active_page * 240, LV_ANIM_OFF);
+
+    create_dots(s_ui.screen);
+}
+
+static void rebuild_cells(void)
+{
+    cells_collect();
+    rebuild_layout();
+}
+
+/* ============================================================================
+ * 上传完成 → 自动刷新（同原实现）
  * ========================================================================= */
 
 static void on_upload_status(upload_op_t op, upload_result_t result,
@@ -542,44 +443,27 @@ static void on_upload_status(upload_op_t op, upload_result_t result,
                              const uint8_t *list_buf, size_t list_len)
 {
     (void)seq; (void)name; (void)extra; (void)list_buf; (void)list_len;
-    /* 只关心"FS 内容真改变了"的两个 ok 事件 */
     if (result != UPL_RESULT_OK) return;
     if (op == UPL_OP_END || op == UPL_OP_DELETE) {
         s_dirty = true;
     }
 }
 
-/* 完整重建列表：清空 list 所有 child（含静态 / 动态 / about）+ free 旧 dyn_names，
- * 然后调原本 create_menu_list 用的三个 helper 重新填充。
- *
- * 简单粗暴但绝对正确：所有内部指针（bt_status_lbl / bl_value_lbl / dyn_names）
- * 都会被重新建立，不会出现野指针。240×320 屏 + ≤16 项，重建耗时几十毫秒可忽略。 */
-static void rebuild_dynamic_items(void)
+/* ============================================================================
+ * 上滑退出菜单 → 回锁屏（与 page_time 的"上滑进菜单"互为往返）
+ * ========================================================================= */
+
+static void on_screen_gesture(lv_event_t *e)
 {
-    if (!s_ui.list) return;
-
-    ESP_LOGI(TAG, "rebuilding menu list (FS changed)");
-
-    lv_obj_clean(s_ui.list);
-
-    /* 旧 dyn_names 此时已随 lv_obj_clean 失去 user_data 关联，安全 free */
-    for (int i = 0; i < s_ui.dyn_count; i++) {
-        free(s_ui.dyn_names[i]);
-        s_ui.dyn_names[i] = NULL;
+    (void)e;
+    lv_indev_t *indev = lv_indev_active();
+    if (!indev) return;
+    lv_dir_t dir = lv_indev_get_gesture_dir(indev);
+    if (dir == LV_DIR_BOTTOM) {
+        /* 下滑回锁屏（菜单的"逆向"动作）*/
+        page_dynamic_app_cancel_prepare_if_any();
+        page_router_switch(PAGE_TIME);
     }
-    s_ui.dyn_count = 0;
-
-    /* 静态项里的 value label 指针先清，再由 create_static_items 重新写入 */
-    s_ui.bt_status_lbl = NULL;
-    s_ui.bl_value_lbl  = NULL;
-
-    create_static_items(s_ui.list);
-    create_dynamic_items(s_ui.list);
-    create_about_item(s_ui.list);
-
-    /* value label 重建后立刻刷一次内容 */
-    update_bt_status();
-    update_backlight_label();
 }
 
 /* ============================================================================
@@ -591,16 +475,17 @@ static lv_obj_t *page_menu_create(void)
     ESP_LOGI(TAG, "Creating menu page");
 
     s_ui.screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(s_ui.screen, lv_color_hex(COLOR_BG), 0);
+    ui_screen_setup(s_ui.screen);
 
-    init_styles();
-    create_top_bar();
-    create_menu_list();
+    lv_obj_add_event_cb(s_ui.screen, on_screen_gesture, LV_EVENT_GESTURE, NULL);
 
-    update_bt_status();
-    update_backlight_label();
+    /* 状态栏（顶部 24px）*/
+    s_ui.statusbar = ui_statusbar_create(s_ui.screen);
 
-    /* 注册上传 status 观察者：idempotent，多次进出菜单不会累积 */
+    s_ui.active_page = 0;
+    rebuild_cells();
+
+    /* 注册上传 status 观察者 */
     (void)dynapp_upload_manager_register_status_cb(on_upload_status);
     s_dirty = false;
     return s_ui.screen;
@@ -610,36 +495,22 @@ static void page_menu_destroy(void)
 {
     ESP_LOGI(TAG, "Destroying menu page");
 
+    cells_clear();   /* free dyn_name 字符串 */
+
     if (s_ui.screen) {
         lv_obj_del(s_ui.screen);
         s_ui.screen = NULL;
     }
-
-    /* 释放挂在动态项 user_data 上的 app 名 */
-    for (int i = 0; i < s_ui.dyn_count; i++) {
-        free(s_ui.dyn_names[i]);
-        s_ui.dyn_names[i] = NULL;
-    }
-    s_ui.dyn_count = 0;
-
-    lv_style_reset(&s_ui.style_card);
-    lv_style_reset(&s_ui.style_item);
-    lv_style_reset(&s_ui.style_item_pressed);
-    lv_style_reset(&s_ui.style_topbtn);
-    lv_style_reset(&s_ui.style_topbtn_pressed);
-
-    s_ui.back_btn = NULL;
-    s_ui.list = NULL;
-    s_ui.bt_status_lbl = NULL;
-    s_ui.bl_value_lbl = NULL;
+    s_ui.statusbar = NULL;
+    s_ui.pager     = NULL;
+    s_ui.dots_box  = NULL;
 }
 
 static void page_menu_update(void)
 {
-    update_bt_status();
     if (s_dirty) {
         s_dirty = false;
-        rebuild_dynamic_items();
+        rebuild_cells();
     }
 }
 
