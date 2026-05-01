@@ -3,25 +3,49 @@ idf_component_register(
         "app_main.c"
         "app_fonts.c"
         "weather_icons.c"
-        # UI 设计系统（token + widgets + anim）
+        # UI 设计系统（token + widgets + anim + shell helper）
         "ui/ui_widgets.c"
         "ui/ui_anim.c"
         "ui/ui_statusbar.c"
-        "pages/page_time.c"
-        "pages/page_time_adjust.c"
-        "pages/page_menu.c"
-        "pages/page_menu_modal.c"
-        "pages/page_about.c"
-        "pages/page_settings.c"
-        "pages/page_weather.c"
-        "pages/page_notifications.c"
-        "pages/page_music.c"
-        "pages/page_system.c"
-        # Dynamic App（MicroQuickJS MVP）演示页
-        "pages/page_dynamic_app.c"
+        "ui/app_shell_ui.c"
+        # ---- Apps（每个目录 = 一个用户感知的应用）----
+        "apps/lockscreen/lockscreen_app.c"
+        "apps/lockscreen/pages/page_lockscreen.c"
+
+        "apps/launcher/launcher_app.c"
+        "apps/launcher/pages/page_launcher.c"
+        "apps/launcher/pages/launcher_modal.c"
+
+        "apps/weather/weather_app.c"
+        "apps/weather/pages/page_weather.c"
+
+        "apps/notifications/notifications_app.c"
+        "apps/notifications/pages/page_notifications.c"
+
+        "apps/music/music_app.c"
+        "apps/music/pages/page_music.c"
+
+        "apps/system/system_app.c"
+        "apps/system/pages/page_system.c"
+
+        "apps/settings/settings_app.c"
+        "apps/settings/pages/settings_home.c"
+        "apps/settings/pages/settings_time.c"
+        "apps/settings/pages/settings_about.c"
+
+        "apps/dynapp_host/dynapp_host_app.c"
+        "apps/dynapp_host/pages/page_dynapp_host.c"
     INCLUDE_DIRS
         "."
         "ui"
+        "apps/lockscreen" "apps/lockscreen/pages"
+        "apps/launcher"   "apps/launcher/pages"
+        "apps/weather"    "apps/weather/pages"
+        "apps/notifications" "apps/notifications/pages"
+        "apps/music"      "apps/music/pages"
+        "apps/system"     "apps/system/pages"
+        "apps/settings"   "apps/settings/pages"
+        "apps/dynapp_host" "apps/dynapp_host/pages"
     EMBED_FILES
         "fonts/srhs_sc_subset.ttf"
         "fonts/material_icons_subset.ttf"
@@ -38,7 +62,6 @@ idf_component_register(
         drivers
         services
         storage
-        # dynamic_app 组件：脚本运行时 + Script->UI 队列桥接
         dynamic_app
         lvgl
 )

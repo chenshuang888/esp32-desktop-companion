@@ -1,15 +1,16 @@
 #include "app_main.h"
-#include "pages/page_time.h"
-#include "pages/page_time_adjust.h"
-#include "pages/page_menu.h"
-#include "pages/page_about.h"
-#include "pages/page_settings.h"
-#include "pages/page_weather.h"
-#include "pages/page_notifications.h"
-#include "pages/page_music.h"
-#include "pages/page_system.h"
-#include "pages/page_dynamic_app.h"
-#include "page_router.h"
+
+#include "app_router.h"
+
+#include "lockscreen_app.h"
+#include "launcher_app.h"
+#include "weather_app.h"
+#include "notifications_app.h"
+#include "music_app.h"
+#include "system_app.h"
+#include "settings_app.h"
+#include "dynapp_host_app.h"
+
 #include "app_fonts.h"
 #include "weather_icons.h"
 #include "lvgl_port.h"
@@ -31,28 +32,21 @@
 
 static const char *TAG = "app_main";
 
-/* 运行中检测 hook：fs_worker 在删脚本前调一次。
- * 跑在 fs_worker task，仅读取 dynamic_app_registry 静态字段，安全。
- * page_router_get_current 也是纯读，不动 LVGL。 */
+/* fs_worker 删脚本前问 UI："这个 app 正在跑吗"。
+ * 只有当前在 dynapp_host 才可能在跑动态 app。 */
 static bool is_app_running(const char *name)
 {
-    if (page_router_get_current() != PAGE_DYNAMIC_APP) return false;
+    const char *cur = app_router_current_id();
+    if (!cur || strcmp(cur, "dynapp_host") != 0) return false;
     const char *running = dynamic_app_registry_current();
     return running && running[0] && strcmp(running, name) == 0;
 }
 
 static void ui_task(void *arg)
 {
+    (void)arg;
     while (1) {
-        /*
-         * Script -> UI 队列桥接：
-         * - 脚本任务里调用 sys.ui.setText(...) 时，只是把“更新请求”塞进队列；
-         * - UI 任务在这里 drain 队列，才能真正调用 LVGL 更新控件。
-         *
-         * 放在 page_router_update/lvgl_port_task_handler 之前的原因：
-         * - 尽量让“这一帧收到的更新”能在同一帧渲染出来，减少肉眼可见的延迟。
-         */
-        /* Script -> UI 队列桥：每帧消化较多命令，避免脚本一次性 build UI 时被丢弃 */
+        /* Script -> UI 队列桥：每帧消化较多命令 */
         dynamic_app_ui_drain(32);
 
         time_manager_process_pending();
@@ -60,10 +54,9 @@ static void ui_task(void *arg)
         notify_manager_process_pending();
         media_manager_process_pending();
         system_manager_process_pending();
-        page_router_update();
+        app_router_tick();           /* 转发到当前 app on_tick */
         lvgl_port_task_handler();
 
-        /* 周期性持久化（内部自判是否到时间/dirty，绝大多数 tick 即返回） */
         notify_manager_tick_flush();
         time_storage_tick_save();
 
@@ -77,48 +70,32 @@ esp_err_t app_main_init(void)
 
     ESP_ERROR_CHECK(lvgl_port_init());
 
-    /* 初始化中文字体副本（带 fallback 链），必须在首个页面 create 之前 */
     app_fonts_init();
-
-    /* 初始化天气图标资源（解析 EMBED 进来的 8 张 .bin 为 lv_image_dsc_t） */
     weather_icons_init();
-
-    /* 恢复上次背光亮度（lvgl_port_init 内部已初始化 lcd_panel） */
     lcd_panel_set_backlight(backlight_storage_get());
 
-    /*
-     * Dynamic App 运行时初始化（MicroQuickJS MVP）：
-     * - 创建脚本任务（通常固定在 Core0）
-     * - 初始化 Script->UI 队列
-     *
-     * 注意：dynamic_app_start() 是在页面里调用的，但前提是这里先 init 成功。
-     */
     ESP_ERROR_CHECK(dynamic_app_init());
 
-    ESP_ERROR_CHECK(page_router_init());
+    /* ---- App router ---- */
+    ESP_ERROR_CHECK(app_router_init());
 
-    ESP_ERROR_CHECK(page_router_register(PAGE_TIME, page_time_get_callbacks()));
-    ESP_ERROR_CHECK(page_router_register(PAGE_MENU, page_menu_get_callbacks()));
-    ESP_ERROR_CHECK(page_router_register(PAGE_ABOUT, page_about_get_callbacks()));
-    ESP_ERROR_CHECK(page_router_register(PAGE_WEATHER, page_weather_get_callbacks()));
-    ESP_ERROR_CHECK(page_router_register(PAGE_NOTIFICATIONS, page_notifications_get_callbacks()));
-    ESP_ERROR_CHECK(page_router_register(PAGE_MUSIC, page_music_get_callbacks()));
-    ESP_ERROR_CHECK(page_router_register(PAGE_TIME_ADJUST, page_time_adjust_get_callbacks()));
-    ESP_ERROR_CHECK(page_router_register(PAGE_SETTINGS, page_settings_get_callbacks()));
-    ESP_ERROR_CHECK(page_router_register(PAGE_SYSTEM, page_system_get_callbacks()));
-    ESP_ERROR_CHECK(page_router_register(PAGE_DYNAMIC_APP, page_dynamic_app_get_callbacks()));
+    ESP_ERROR_CHECK(app_router_register(&LOCKSCREEN_APP));
+    ESP_ERROR_CHECK(app_router_register(&LAUNCHER_APP));
+    ESP_ERROR_CHECK(app_router_register(&WEATHER_APP));
+    ESP_ERROR_CHECK(app_router_register(&NOTIFICATIONS_APP));
+    ESP_ERROR_CHECK(app_router_register(&MUSIC_APP));
+    ESP_ERROR_CHECK(app_router_register(&SYSTEM_APP));
+    ESP_ERROR_CHECK(app_router_register(&SETTINGS_APP));
+    ESP_ERROR_CHECK(app_router_register(&DYNAPP_HOST_APP));
 
-    ESP_ERROR_CHECK(page_router_switch(PAGE_TIME));
+    /* launcher 一次性 module init（注册 upload 观察者；旧实现里这步在 page on_enter 重复跑） */
+    launcher_app_module_init();
 
-    /* 注入"运行中检测"hook，让 fs_worker 拒绝删除当前正在跑的 app。
-     * 必须在 page_router_init 之后注册（hook 内部读 page_router_get_current）。 */
+    ESP_ERROR_CHECK(app_router_enter("lockscreen"));
+
+    /* fs_worker hook：必须在 app_router_init 之后注册（hook 内读 app_router_current_id）*/
     dynapp_fs_worker_set_running_check(is_app_running);
 
-    /*
-     * UI 任务固定在 Core1：
-     * - 与脚本任务（Core0）分开，减少抢占；
-     * - 并且方便建立“UI 相关操作只能在 UI 任务做”的心智模型。
-     */
     BaseType_t ret = xTaskCreatePinnedToCore(ui_task, "ui_task", 8192, NULL, 5, NULL, 1);
     if (ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create UI task");

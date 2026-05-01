@@ -40,7 +40,10 @@
       "Bash(grep -n \"FS_LITTLEFS_ROOT\\\\|fs_littlefs\\\\\\\\.h\\\\|sys/stat\\\\|<stat\" C:/Users/ChenShuang/Desktop/esp32/demo6/app/pages/page_menu.c)",
       "Bash(grep -v \"\\\\.bin$\")",
       "Bash(xxd)",
-      "Bash(grep -rn \"dynamic_app_ui_enqueue_set_image_src\\\\|set_image_src.*body\\\\|BIN_HEADER\\\\|read.*\\\\\\\\.bin\" components/dynamic_app/)"
+      "Bash(grep -rn \"dynamic_app_ui_enqueue_set_image_src\\\\|set_image_src.*body\\\\|BIN_HEADER\\\\|read.*\\\\\\\\.bin\" components/dynamic_app/)",
+      "Bash(sed -i '/#include \"app_shell.h\"/d' app/app_main.c app/apps/launcher/pages/page_launcher.c)",
+      "Bash(sed -i 's|#include \"app_shell.h\"|#include \"app_router.h\"|' app/apps/music/pages/page_music.c app/apps/weather/pages/page_weather.c app/apps/lockscreen/pages/page_lockscreen.c app/apps/system/pages/page_system.c app/apps/dynapp_host/pages/page_dynapp_host.c app/apps/settings/settings_app.c app/apps/notifications/pages/page_notifications.c)",
+      "Bash(xargs sed *)"
     ]
   }
 }

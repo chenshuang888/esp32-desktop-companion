@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
-        "page_router.c"
+        "app_router.c"
+        "sub_router.c"
     INCLUDE_DIRS
         "."
     REQUIRES
