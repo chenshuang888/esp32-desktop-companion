@@ -20,6 +20,7 @@
 #include "notify_manager.h"
 #include "media_manager.h"
 #include "playlist_manager.h"
+#include "device_stats.h"
 #include "system_manager.h"
 #include "backlight_storage.h"
 #include "time_storage.h"
@@ -46,6 +47,7 @@ static bool is_app_running(const char *name)
 static void ui_task(void *arg)
 {
     (void)arg;
+    uint32_t loop_cnt = 0;
     while (1) {
         /* Script -> UI 队列桥：每帧消化较多命令 */
         dynamic_app_ui_drain(32);
@@ -56,6 +58,12 @@ static void ui_task(void *arg)
         media_manager_process_pending();
         playlist_manager_process_pending();
         system_manager_process_pending();
+
+        /* ESP 端自身运行数据：1Hz 采集（loop ~10ms × 100 = 1s） */
+        if ((loop_cnt++ % 100) == 0) {
+            device_stats_tick();
+        }
+
         app_router_tick();           /* 转发到当前 app on_tick */
         lvgl_port_task_handler();
 

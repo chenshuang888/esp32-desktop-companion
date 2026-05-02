@@ -10,6 +10,7 @@ idf_component_register(
         "manager/playlist_manager.c"
         "media_service.c"
         "manager/system_manager.c"
+        "manager/device_stats.c"
         "system_service.c"
         "manager/battery_sim.c"
         "dynapp_bridge_service.c"
@@ -24,4 +25,6 @@ idf_component_register(
         esp_timer
         storage
         drivers
+        driver
+        app_update
 )

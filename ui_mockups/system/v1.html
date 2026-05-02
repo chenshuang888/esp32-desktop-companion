@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>System v1 — 顶部 tab + 圆盘表盘</title>
+<link rel="stylesheet" href="../_shared/tokens.css">
+<link rel="stylesheet" href="../_shared/frame.css">
+<style>
+  /* ============================================================================
+   * v1：顶部 tab 切 PC / Device 两个子页
+   *   - tab 在 statusbar 下方（y=24~52），点击切换或左右滑动
+   *   - 主体放 3 个 conic-gradient 圆盘（CPU/MEM/温度），下方一行小信息
+   *   - 屏幕最下 30px = 上滑退出 hit zone
+   *
+   * LVGL 落地说明：
+   *   - 圆盘 = lv_arc，外圈彩色弧 + 内填中心数字 label，无需 canvas
+   *   - tab 切换 = sub_router 在同一个 app 内 push 两个 page，或者一个 page
+   *     里两个 container alpha 切换（更平滑）—— 我推荐后者
+   * ========================================================================= */
+
+  .screen {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+  }
+
+  /* ---- 状态栏占位（24px）---- */
+  .statusbar {
+    height: 24px; flex-shrink: 0;
+    border-bottom: 1px solid rgba(198,198,200,0.4);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 var(--sp-md);
+    font-size: var(--f-body);
+    color: var(--text);
+  }
+  .statusbar .battery {
+    display: inline-flex; align-items: center;
+    width: 32px; height: 14px;
+    border: 1px solid var(--text); border-radius: 3px;
+    padding: 1px; position: relative;
+  }
+  .statusbar .battery::after {
+    content: ''; position: absolute; right: -3px; top: 4px;
+    width: 2px; height: 6px;
+    background: var(--text); border-radius: 0 1px 1px 0;
+  }
+  .statusbar .battery .fill { width: 80%; height: 100%; background: var(--ok); border-radius: 1px; }
+  .statusbar .battery .pct {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; color: var(--text); font-weight: 600;
+  }
+
+  /* ---- tab bar（28px，紧贴状态栏下方）---- */
+  .tabbar {
+    height: 28px; flex-shrink: 0;
+    display: flex; flex-direction: row;
+    background: var(--bg);
+    border-bottom: 1px solid rgba(198,198,200,0.4);
+  }
+  .tabbar .tab {
+    flex: 1;
+    display: flex; align-items: center; justify-content: center;
+    gap: 4px;
+    color: var(--text-muted);
+    font-size: var(--f-body);
+    position: relative;
+  }
+  .tabbar .tab .icon { font-size: 14px; }
+  .tabbar .tab.active {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .tabbar .tab.active::after {
+    content: ''; position: absolute;
+    left: 30%; right: 30%; bottom: 0;
+    height: 2px; background: var(--accent);
+    border-radius: 1px;
+  }
+
+  /* ---- 主体：放圆盘 ---- */
+  .main {
+    flex: 1;
+    display: flex; flex-direction: column;
+    padding: var(--sp-md) var(--sp-md) 0;
+  }
+
+  /* ---- 圆盘行（横排 3 个）---- */
+  .gauge-row {
+    display: flex; flex-direction: row;
+    justify-content: space-around; align-items: center;
+    margin-bottom: var(--sp-md);
+  }
+
+  /* ---- 单个圆盘 ---- */
+  .gauge {
+    width: 64px; height: 64px;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .gauge .ring {
+    width: 100%; height: 100%;
+    border-radius: 50%;
+    /* conic-gradient: 起点在顶部，0..value 是色彩，剩下灰底；
+       用 from -90deg 让起点在 12 点钟方向 */
+    background: conic-gradient(
+      from -90deg,
+      var(--g-color, var(--accent)) 0deg var(--g-deg, 0deg),
+      var(--border) var(--g-deg, 0deg) 360deg
+    );
+    /* 镂空：内圆白底盖住 */
+    -webkit-mask: radial-gradient(circle, transparent 21px, black 22px);
+            mask: radial-gradient(circle, transparent 21px, black 22px);
+  }
+  .gauge .center {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 0;
+  }
+  .gauge .num {
+    font-size: 18px; font-weight: 600;
+    color: var(--text); line-height: 1;
+  }
+  .gauge .unit {
+    font-size: 9px; color: var(--text-muted);
+    margin-top: 1px;
+  }
+  .gauge .lbl {
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+  .gauge-wrap {
+    display: flex; flex-direction: column;
+    align-items: center;
+  }
+
+  /* 状态色变量：套到 .gauge 上即可 */
+  .gauge.ok       { --g-color: var(--ok); }
+  .gauge.accent   { --g-color: var(--accent); }
+  .gauge.warn     { --g-color: var(--warn); }
+  .gauge.err      { --g-color: var(--err); }
+  .gauge.purple   { --g-color: var(--accent-2); }
+  .gauge.cyan     { --g-color: var(--info); }
+
+  /* ---- 信息卡（下半部）---- */
+  .info-card {
+    background: var(--panel);
+    border: 1px solid rgba(198,198,200,0.5);
+    border-radius: var(--r-lg);
+    padding: var(--sp-sm) var(--sp-md);
+    margin-bottom: var(--sp-sm);
+  }
+  .info-row {
+    display: flex; flex-direction: row;
+    justify-content: space-between; align-items: center;
+    height: 20px;
+    border-bottom: 1px solid rgba(198,198,200,0.3);
+  }
+  .info-row:last-child { border-bottom: none; }
+  .info-row .k {
+    color: var(--text-muted);
+    font-size: var(--f-body);
+  }
+  .info-row .v {
+    color: var(--text);
+    font-size: var(--f-body);
+  }
+
+  /* ---- hit zone（30px 底部留白）---- */
+  .hit-zone { height: 30px; flex-shrink: 0; }
+
+  /* ---- 标签注释 ---- */
+  .meta-label {
+    text-align: center; color: #666; font-size: 9px;
+    font-family: ui-monospace, monospace;
+    margin-top: 6px;
+  }
+</style>
+</head>
+<body>
+
+<div class="stages-row">
+
+  <!-- ============================== Tab 1: PC ============================== -->
+  <div class="stage">
+    <div class="meta">v1 · Tab=PC · 240×320</div>
+    <div class="screen">
+
+      <!-- 状态栏 -->
+      <div class="statusbar">
+        <span>14:32</span>
+        <span class="battery"><span class="fill"></span><span class="pct">87</span></span>
+      </div>
+
+      <!-- Tab bar -->
+      <div class="tabbar">
+        <div class="tab active"><span class="icon">💻</span><span>电脑</span></div>
+        <div class="tab"><span class="icon">⌚</span><span>设备</span></div>
+      </div>
+
+      <!-- 主体 -->
+      <div class="main">
+
+        <!-- 三圆盘 -->
+        <div class="gauge-row">
+          <div class="gauge-wrap">
+            <div class="gauge accent" style="--g-deg: 126deg;">
+              <div class="ring"></div>
+              <div class="center">
+                <div class="num">35</div>
+                <div class="unit">%</div>
+              </div>
+            </div>
+            <div class="lbl">CPU</div>
+          </div>
+          <div class="gauge-wrap">
+            <div class="gauge purple" style="--g-deg: 223deg;">
+              <div class="ring"></div>
+              <div class="center">
+                <div class="num">62</div>
+                <div class="unit">%</div>
+              </div>
+            </div>
+            <div class="lbl">内存</div>
+          </div>
+          <div class="gauge-wrap">
+            <div class="gauge warn" style="--g-deg: 281deg;">
+              <div class="ring"></div>
+              <div class="center">
+                <div class="num">78</div>
+                <div class="unit">%</div>
+              </div>
+            </div>
+            <div class="lbl">磁盘</div>
+          </div>
+        </div>
+
+        <!-- 信息卡 1：电池 + 温度 -->
+        <div class="info-card">
+          <div class="info-row"><span class="k">电池</span><span class="v">87% ⚡</span></div>
+          <div class="info-row"><span class="k">CPU 温度</span><span class="v">45.2°C</span></div>
+        </div>
+
+        <!-- 信息卡 2：网络 + 运行 -->
+        <div class="info-card">
+          <div class="info-row"><span class="k">↓ 下行</span><span class="v">2.4 MB/s</span></div>
+          <div class="info-row"><span class="k">↑ 上行</span><span class="v">256 KB/s</span></div>
+          <div class="info-row"><span class="k">运行</span><span class="v">2d 14h</span></div>
+        </div>
+      </div>
+
+      <div class="hit-zone"></div>
+    </div>
+    <div class="meta-label">PC：3 圆盘（CPU/内存/磁盘）+ 电池温度卡 + 网络运行卡</div>
+  </div>
+
+  <!-- ============================== Tab 2: Device ============================== -->
+  <div class="stage">
+    <div class="meta">v1 · Tab=Device · 240×320</div>
+    <div class="screen">
+
+      <div class="statusbar">
+        <span>14:32</span>
+        <span class="battery"><span class="fill"></span><span class="pct">87</span></span>
+      </div>
+
+      <div class="tabbar">
+        <div class="tab"><span class="icon">💻</span><span>电脑</span></div>
+        <div class="tab active"><span class="icon">⌚</span><span>设备</span></div>
+      </div>
+
+      <div class="main">
+
+        <!-- 三圆盘：PSRAM / SRAM / 温度 -->
+        <div class="gauge-row">
+          <div class="gauge-wrap">
+            <div class="gauge cyan" style="--g-deg: 130deg;">
+              <div class="ring"></div>
+              <div class="center">
+                <div class="num">2.8</div>
+                <div class="unit">M</div>
+              </div>
+            </div>
+            <div class="lbl">PSRAM</div>
+          </div>
+          <div class="gauge-wrap">
+            <div class="gauge ok" style="--g-deg: 84deg;">
+              <div class="ring"></div>
+              <div class="center">
+                <div class="num">128</div>
+                <div class="unit">K free</div>
+              </div>
+            </div>
+            <div class="lbl">SRAM</div>
+          </div>
+          <div class="gauge-wrap">
+            <div class="gauge accent" style="--g-deg: 168deg;">
+              <div class="ring"></div>
+              <div class="center">
+                <div class="num">47</div>
+                <div class="unit">°C</div>
+              </div>
+            </div>
+            <div class="lbl">温度</div>
+          </div>
+        </div>
+
+        <!-- 信息卡 1：系统状态 -->
+        <div class="info-card">
+          <div class="info-row"><span class="k">运行时长</span><span class="v">2h 14m</span></div>
+          <div class="info-row"><span class="k">FreeRTOS 任务</span><span class="v">22 个</span></div>
+          <div class="info-row"><span class="k">BLE 连接</span><span class="v" style="color: var(--ok);">● 已连接</span></div>
+        </div>
+
+        <!-- 信息卡 2：存储 + 固件 -->
+        <div class="info-card">
+          <div class="info-row"><span class="k">LittleFS</span><span class="v">512K / 2M</span></div>
+          <div class="info-row"><span class="k">复位原因</span><span class="v">软重启</span></div>
+          <div class="info-row"><span class="k">固件版本</span><span class="v">v1.0.0</span></div>
+        </div>
+      </div>
+
+      <div class="hit-zone"></div>
+    </div>
+    <div class="meta-label">Device：3 圆盘（PSRAM/SRAM/温度）+ 系统卡 + 存储卡</div>
+  </div>
+
+</div>
+
+<div class="toolbar">
+  <button id="btn-grid">Toggle 8px Grid</button>
+</div>
+
+<script>
+  document.getElementById('btn-grid').onclick = function() {
+    document.body.classList.toggle('show-grid');
+    this.classList.toggle('on');
+  };
+</script>
+
+</body>
+</html>

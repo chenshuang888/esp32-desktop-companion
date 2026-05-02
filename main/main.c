@@ -19,6 +19,7 @@
 #include "media_manager.h"
 #include "playlist_manager.h"
 #include "system_manager.h"
+#include "device_stats.h"
 #include "persist.h"
 #include "backlight_storage.h"
 #include "time_storage.h"
@@ -84,6 +85,9 @@ void app_main(void)
 
     // 初始化系统监控管理器（PC 推 CPU/MEM/DISK/BAT/NET/Temp）
     ESP_ERROR_CHECK(system_manager_init());
+
+    // 初始化 ESP32 端运行状态采集（温度 sensor + heap/uptime/...）
+    ESP_ERROR_CHECK(device_stats_init());
 
     // 初始化 BLE：先拉起 NimBLE 协议栈，再让各 service 自行注册 GATT 表，最后启动 host task
     ESP_ERROR_CHECK(ble_driver_nimble_init());

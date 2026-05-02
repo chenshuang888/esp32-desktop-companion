@@ -28,7 +28,9 @@ idf_component_register(
         "apps/music/pages/page_music_detail.c"
 
         "apps/system/system_app.c"
-        "apps/system/pages/page_system.c"
+        "apps/system/pages/system_ui_common.c"
+        "apps/system/pages/page_system_pc.c"
+        "apps/system/pages/page_system_device.c"
 
         "apps/settings/settings_app.c"
         "apps/settings/pages/settings_home.c"
