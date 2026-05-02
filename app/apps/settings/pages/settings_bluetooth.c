@@ -1,11 +1,8 @@
-#include "settings_about.h"
+#include "settings_bluetooth.h"
 #include "settings_app.h"
 
 #include "esp_log.h"
-#include "esp_app_desc.h"
-#include "esp_chip_info.h"
-#include "esp_flash.h"
-#include "esp_heap_caps.h"
+#include "esp_mac.h"
 #include "lvgl.h"
 
 #include "ui_tokens.h"
@@ -13,15 +10,22 @@
 #include "app_shell_ui.h"
 #include "app_fonts.h"
 
+#include "ble_driver.h"
+
 #include <stdio.h>
 #include <string.h>
 
-static const char *TAG = "settings_about";
+static const char *TAG = "settings_bt";
 
-#define HIT_ZONE_H  30
+#define BLE_DEVICE_NAME "ESP32-S3-DEMO"   /* 与 ble_driver.c 保持一致 */
+#define HIT_ZONE_H      30
 
 typedef struct {
     lv_obj_t *screen;
+    lv_obj_t *hero_icon;
+    lv_obj_t *hero_status;
+    lv_obj_t *hero_sub;
+    bool      last_connected;
     int       press_y0;
     int       press_y_last;
 } ui_t;
@@ -29,15 +33,15 @@ typedef struct {
 static ui_t s_ui;
 
 /* ============================================================================
- * 卡 + KV 行
+ * 信息卡 + KV
  * ========================================================================= */
 
-static lv_obj_t *make_card(lv_obj_t *parent, int y)
+static lv_obj_t *make_info_card(lv_obj_t *parent, int y, int w)
 {
     lv_obj_t *c = lv_obj_create(parent);
     lv_obj_remove_style_all(c);
-    lv_obj_set_size(c, 220, LV_SIZE_CONTENT);
-    lv_obj_set_pos(c, (240 - 220) / 2, y);
+    lv_obj_set_size(c, w, LV_SIZE_CONTENT);
+    lv_obj_set_pos(c, (240 - w) / 2, y);
     lv_obj_set_style_bg_color(c, UI_C_PANEL, 0);
     lv_obj_set_style_bg_opa(c, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(c, UI_C_BORDER, 0);
@@ -84,8 +88,15 @@ static void make_kv(lv_obj_t *card, const char *k, const char *v, bool divider)
 }
 
 /* ============================================================================
- * 上滑退出
+ * 事件
  * ========================================================================= */
+
+static void on_disconnect_clicked(lv_event_t *e)
+{
+    (void)e;
+    /* TODO: 实际断开逻辑暂未接（ble_driver 没暴露 disconnect API）*/
+    ESP_LOGI(TAG, "disconnect button pressed (no-op)");
+}
 
 static void on_hit_pressed(lv_event_t *e)
 {
@@ -117,10 +128,21 @@ static void on_hit_released(lv_event_t *e)
  * 视图
  * ========================================================================= */
 
+static void apply_status(bool connected)
+{
+    lv_obj_set_style_bg_color(s_ui.hero_icon,
+        connected ? UI_C_ACCENT : UI_C_TEXT_MUTED, 0);
+    lv_label_set_text(s_ui.hero_status, connected ? "已连接" : "未连接");
+    lv_obj_set_style_text_color(s_ui.hero_status,
+        connected ? lv_color_hex(0x34C759) : UI_C_TEXT_MUTED, 0);
+    lv_label_set_text(s_ui.hero_sub,
+        connected ? "通过 BLE 与电脑通信" : "等待电脑连接");
+}
+
 static void create_title(lv_obj_t *parent)
 {
     lv_obj_t *t = lv_label_create(parent);
-    lv_label_set_text(t, "关于");
+    lv_label_set_text(t, "蓝牙");
     lv_obj_set_style_text_font(t, APP_FONT_TITLE, 0);
     lv_obj_set_style_text_color(t, UI_C_TEXT, 0);
     lv_obj_align(t, LV_ALIGN_TOP_LEFT, UI_SP_MD, 24 + UI_SP_SM);
@@ -128,95 +150,79 @@ static void create_title(lv_obj_t *parent)
 
 static void create_hero(lv_obj_t *parent)
 {
-    /* 紫色圆角 logo 56×56 */
-    lv_obj_t *logo = lv_obj_create(parent);
-    lv_obj_remove_style_all(logo);
-    lv_obj_set_size(logo, 56, 56);
-    lv_obj_align(logo, LV_ALIGN_TOP_MID, 0, 64);
-    lv_obj_set_style_radius(logo, UI_R_LG, 0);
-    lv_obj_set_style_bg_color(logo, UI_C_ACCENT_2, 0);
-    lv_obj_set_style_bg_opa(logo, LV_OPA_COVER, 0);
-    lv_obj_clear_flag(logo, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_clear_flag(logo, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_flag(logo, LV_OBJ_FLAG_EVENT_BUBBLE);
+    /* 56px 圆形图标 */
+    s_ui.hero_icon = lv_obj_create(parent);
+    lv_obj_remove_style_all(s_ui.hero_icon);
+    lv_obj_set_size(s_ui.hero_icon, 56, 56);
+    lv_obj_align(s_ui.hero_icon, LV_ALIGN_TOP_MID, 0, 64);
+    lv_obj_set_style_radius(s_ui.hero_icon, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(s_ui.hero_icon, UI_C_ACCENT, 0);
+    lv_obj_set_style_bg_opa(s_ui.hero_icon, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(s_ui.hero_icon, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(s_ui.hero_icon, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(s_ui.hero_icon, LV_OBJ_FLAG_EVENT_BUBBLE);
 
-    lv_obj_t *icon = lv_label_create(logo);
+    lv_obj_t *icon = lv_label_create(s_ui.hero_icon);
     lv_obj_set_style_text_font(icon, APP_FONT_ICONS_36, 0);
     lv_obj_set_style_text_color(icon, lv_color_hex(0xFFFFFF), 0);
-    lv_label_set_text(icon, ICON_SCHEDULE);
+    lv_label_set_text(icon, ICON_BLUETOOTH);
     lv_obj_center(icon);
 
-    /* 名字 */
-    lv_obj_t *name = lv_label_create(parent);
-    lv_obj_set_style_text_font(name, APP_FONT_TITLE, 0);
-    lv_obj_set_style_text_color(name, UI_C_TEXT, 0);
-    lv_label_set_text(name, "ESP32 Watch");
-    lv_obj_align(name, LV_ALIGN_TOP_MID, 0, 128);
+    s_ui.hero_status = lv_label_create(parent);
+    lv_obj_set_style_text_font(s_ui.hero_status, APP_FONT_TITLE, 0);
+    lv_label_set_text(s_ui.hero_status, "已连接");
+    lv_obj_align(s_ui.hero_status, LV_ALIGN_TOP_MID, 0, 128);
 
-    /* 版本 */
-    const esp_app_desc_t *desc = esp_app_get_description();
-    char ver[80];
-    if (desc) {
-        snprintf(ver, sizeof(ver), "%s · %s",
-                 desc->version[0] ? desc->version : "v?",
-                 desc->date[0] ? desc->date : "");
-    } else {
-        snprintf(ver, sizeof(ver), "v0.0");
-    }
-
-    lv_obj_t *sub = lv_label_create(parent);
-    lv_obj_set_style_text_font(sub, APP_FONT_TEXT, 0);
-    lv_obj_set_style_text_color(sub, UI_C_TEXT_MUTED, 0);
-    lv_label_set_text(sub, ver);
-    lv_obj_align(sub, LV_ALIGN_TOP_MID, 0, 152);
+    s_ui.hero_sub = lv_label_create(parent);
+    lv_obj_set_style_text_font(s_ui.hero_sub, APP_FONT_TEXT, 0);
+    lv_obj_set_style_text_color(s_ui.hero_sub, UI_C_TEXT_MUTED, 0);
+    lv_label_set_text(s_ui.hero_sub, "通过 BLE 与电脑通信");
+    lv_obj_align(s_ui.hero_sub, LV_ALIGN_TOP_MID, 0, 150);
 }
 
 static void create_info(lv_obj_t *parent)
 {
-    lv_obj_t *card = make_card(parent, 184);
+    lv_obj_t *card = make_info_card(parent, 178, 220);
 
-    /* 芯片型号 */
-    esp_chip_info_t chip;
-    esp_chip_info(&chip);
-    char chip_str[32];
-    const char *model = "Unknown";
-    switch (chip.model) {
-        case CHIP_ESP32:    model = "ESP32";    break;
-        case CHIP_ESP32S2:  model = "ESP32-S2"; break;
-        case CHIP_ESP32S3:  model = "ESP32-S3"; break;
-        case CHIP_ESP32C3:  model = "ESP32-C3"; break;
-        case CHIP_ESP32C6:  model = "ESP32-C6"; break;
-        case CHIP_ESP32H2:  model = "ESP32-H2"; break;
-        default: break;
+    /* 设备名 */
+    make_kv(card, "设备名", BLE_DEVICE_NAME, true);
+
+    /* MAC 地址（本机蓝牙）*/
+    uint8_t mac[6] = {0};
+    char mac_str[20] = "--";
+    if (esp_read_mac(mac, ESP_MAC_BT) == ESP_OK) {
+        snprintf(mac_str, sizeof(mac_str), "%02X:%02X:%02X:%02X:%02X:%02X",
+                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     }
-    snprintf(chip_str, sizeof(chip_str), "%s · %d 核", model, chip.cores);
+    make_kv(card, "MAC", mac_str, false);
+}
 
-    /* Flash 大小 */
-    uint32_t flash_sz = 0;
-    esp_flash_get_size(NULL, &flash_sz);
-    char flash_str[16];
-    snprintf(flash_str, sizeof(flash_str), "%lu MB",
-             (unsigned long)(flash_sz / 1024 / 1024));
+static void create_disconnect_btn(lv_obj_t *parent)
+{
+    lv_obj_t *card = lv_obj_create(parent);
+    lv_obj_remove_style_all(card);
+    lv_obj_set_size(card, 220, 44);
+    lv_obj_set_pos(card, (240 - 220) / 2, 232);
+    lv_obj_set_style_bg_color(card, UI_C_PANEL, 0);
+    lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(card, UI_C_BORDER, 0);
+    lv_obj_set_style_border_width(card, 1, 0);
+    lv_obj_set_style_border_opa(card, LV_OPA_50, 0);
+    lv_obj_set_style_radius(card, UI_R_LG, 0);
+    lv_obj_set_style_pad_left(card, UI_SP_MD, 0);
+    lv_obj_set_style_pad_right(card, UI_SP_MD, 0);
+    lv_obj_set_style_bg_color(card, UI_C_PANEL_HI, LV_STATE_PRESSED);
+    lv_obj_set_style_bg_opa(card, LV_OPA_COVER, LV_STATE_PRESSED);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(card, LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_add_event_cb(card, on_disconnect_clicked, LV_EVENT_CLICKED, NULL);
 
-    /* PSRAM 大小 */
-    size_t psram_total = heap_caps_get_total_size(MALLOC_CAP_SPIRAM);
-    char psram_str[16];
-    if (psram_total > 0) {
-        snprintf(psram_str, sizeof(psram_str), "%u MB",
-                 (unsigned)(psram_total / 1024 / 1024));
-    } else {
-        snprintf(psram_str, sizeof(psram_str), "无");
-    }
-
-    /* IDF 版本 */
-    char idf_str[24];
-    snprintf(idf_str, sizeof(idf_str), "v%s", IDF_VER);
-
-    make_kv(card, "芯片",  chip_str,   true);
-    make_kv(card, "框架",  idf_str,    true);
-    make_kv(card, "GUI",   "LVGL 9.5", true);
-    make_kv(card, "Flash", flash_str,  true);
-    make_kv(card, "PSRAM", psram_str,  false);
+    lv_obj_t *lbl = lv_label_create(card);
+    lv_obj_center(lbl);
+    lv_obj_set_style_text_font(lbl, APP_FONT_TEXT, 0);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(0xFF3B30), 0);
+    lv_label_set_text(lbl, "断开连接");
 }
 
 /* ============================================================================
@@ -237,6 +243,10 @@ static lv_obj_t *create(void)
     create_title(s_ui.screen);
     create_hero(s_ui.screen);
     create_info(s_ui.screen);
+    create_disconnect_btn(s_ui.screen);
+
+    s_ui.last_connected = ble_driver_is_connected();
+    apply_status(s_ui.last_connected);
 
     /* hit zone */
     lv_obj_t *hit = lv_obj_create(s_ui.screen);
@@ -261,13 +271,22 @@ static void destroy(void)
     s_ui.press_y0 = -1;
 }
 
-static const page_callbacks_t s_callbacks = {
+static void update(void)
+{
+    bool now = ble_driver_is_connected();
+    if (now != s_ui.last_connected) {
+        s_ui.last_connected = now;
+        apply_status(now);
+    }
+}
+
+static const page_callbacks_t s_cb = {
     .create  = create,
     .destroy = destroy,
-    .update  = NULL,
+    .update  = update,
 };
 
-const page_callbacks_t *settings_about_get_callbacks(void)
+const page_callbacks_t *settings_bluetooth_get_callbacks(void)
 {
-    return &s_callbacks;
+    return &s_cb;
 }

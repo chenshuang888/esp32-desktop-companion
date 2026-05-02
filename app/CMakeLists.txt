@@ -34,6 +34,8 @@ idf_component_register(
 
         "apps/settings/settings_app.c"
         "apps/settings/pages/settings_home.c"
+        "apps/settings/pages/settings_bluetooth.c"
+        "apps/settings/pages/settings_display.c"
         "apps/settings/pages/settings_time.c"
         "apps/settings/pages/settings_about.c"
 
@@ -68,4 +70,7 @@ idf_component_register(
         storage
         dynamic_app
         lvgl
+        app_update
+        spi_flash
+        esp_hw_support
 )

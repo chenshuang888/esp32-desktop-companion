@@ -4,6 +4,8 @@
 #include "esp_log.h"
 
 #include "settings_home.h"
+#include "settings_bluetooth.h"
+#include "settings_display.h"
 #include "settings_time.h"
 #include "settings_about.h"
 
@@ -22,12 +24,14 @@ static lv_obj_t *on_enter(void)
         sub_router_destroy(s_router);
         s_router = NULL;
     }
-    s_router = sub_router_create(/*pages=*/ 4, /*history=*/ 4);
+    s_router = sub_router_create(/*pages=*/ 5, /*history=*/ 4);
     if (!s_router) return NULL;
 
-    sub_router_register(s_router, SETTINGS_PAGE_HOME,  settings_home_get_callbacks());
-    sub_router_register(s_router, SETTINGS_PAGE_TIME,  settings_time_get_callbacks());
-    sub_router_register(s_router, SETTINGS_PAGE_ABOUT, settings_about_get_callbacks());
+    sub_router_register(s_router, SETTINGS_PAGE_HOME,      settings_home_get_callbacks());
+    sub_router_register(s_router, SETTINGS_PAGE_BLUETOOTH, settings_bluetooth_get_callbacks());
+    sub_router_register(s_router, SETTINGS_PAGE_DISPLAY,   settings_display_get_callbacks());
+    sub_router_register(s_router, SETTINGS_PAGE_TIME,      settings_time_get_callbacks());
+    sub_router_register(s_router, SETTINGS_PAGE_ABOUT,     settings_about_get_callbacks());
 
     /* sub_router_push 内部会 lv_scr_load 当前 home screen */
     if (sub_router_push(s_router, SETTINGS_PAGE_HOME) != ESP_OK) {
