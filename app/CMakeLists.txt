@@ -41,6 +41,14 @@ idf_component_register(
 
         "apps/dynapp_host/dynapp_host_app.c"
         "apps/dynapp_host/pages/page_dynapp_host.c"
+
+        "apps/clock/clock_app.c"
+        "apps/clock/pages/clock_ui_common.c"
+        "apps/clock/pages/page_alarms.c"
+        "apps/clock/pages/page_world.c"
+        "apps/clock/pages/page_stopwatch.c"
+        "apps/clock/pages/page_timer.c"
+        "apps/clock/pages/page_alarm_edit.c"
     INCLUDE_DIRS
         "."
         "ui"
@@ -52,6 +60,7 @@ idf_component_register(
         "apps/system"     "apps/system/pages"
         "apps/settings"   "apps/settings/pages"
         "apps/dynapp_host" "apps/dynapp_host/pages"
+        "apps/clock"      "apps/clock/pages"
     EMBED_FILES
         "fonts/srhs_sc_subset.ttf"
         "fonts/material_icons_subset.ttf"

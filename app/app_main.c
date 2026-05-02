@@ -10,6 +10,7 @@
 #include "system_app.h"
 #include "settings_app.h"
 #include "dynapp_host_app.h"
+#include "clock_app.h"
 
 #include "app_fonts.h"
 #include "weather_icons.h"
@@ -96,6 +97,7 @@ esp_err_t app_main_init(void)
     ESP_ERROR_CHECK(app_router_register(&MUSIC_APP));
     ESP_ERROR_CHECK(app_router_register(&SYSTEM_APP));
     ESP_ERROR_CHECK(app_router_register(&SETTINGS_APP));
+    ESP_ERROR_CHECK(app_router_register(&CLOCK_APP));
     ESP_ERROR_CHECK(app_router_register(&DYNAPP_HOST_APP));
 
     /* launcher 一次性 module init（注册 upload 观察者；旧实现里这步在 page on_enter 重复跑） */

@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Clock v1 — 4 tab（华为时钟风格）</title>
+<link rel="stylesheet" href="../_shared/tokens.css">
+<link rel="stylesheet" href="../_shared/frame.css">
+<style>
+  /* ============================================================================
+   * v1：仿华为/iOS 时钟 app
+   *   4 子页：闹钟 / 世界时钟 / 秒表 / 计时器
+   *   tab 栏在顶部（已确定不放底部）
+   *   底部 30px hit zone（上滑退出 app，跟其他 app 对齐）
+   *
+   * LVGL 落地：
+   *   - 单 app 双 page？不，4 页太多用 sub_router 双 page 模式（同 system app）
+   *     → tab 栏点击 / 左右滑切换 → sub_router_replace
+   *   - 闹钟用 list 行 + 切换开关
+   *   - 世界时钟用 list 行 + 大数字时间
+   *   - 秒表 / 计时器用大数字 + 圆形按钮
+   * ========================================================================= */
+
+  .screen { display: flex; flex-direction: column; background: var(--bg); }
+
+  /* ---- 状态栏 ---- */
+  .statusbar {
+    height: 24px; flex-shrink: 0;
+    padding: 0 var(--sp-md);
+    display: flex; align-items: center; justify-content: space-between;
+    color: var(--text); font-size: var(--f-body);
+    border-bottom: 1px solid rgba(198,198,200,0.4);
+  }
+  .statusbar .battery {
+    display: inline-flex; align-items: center;
+    width: 32px; height: 14px;
+    border: 1px solid var(--text); border-radius: 3px;
+    padding: 1px; position: relative;
+  }
+  .statusbar .battery::after {
+    content: ''; position: absolute; right: -3px; top: 4px;
+    width: 2px; height: 6px; background: var(--text);
+    border-radius: 0 1px 1px 0;
+  }
+  .statusbar .battery .fill { width: 80%; height: 100%; background: var(--ok); border-radius: 1px; }
+  .statusbar .battery .pct {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; color: var(--text); font-weight: 600;
+  }
+
+  /* ---- 顶部 tab 栏（仿华为：等分 4 个 tab，选中底部 2px 蓝色短下划线 + 蓝字加粗）---- */
+  .tabbar {
+    height: 32px; flex-shrink: 0;
+    display: flex; flex-direction: row;
+    background: var(--bg);
+    border-bottom: 1px solid rgba(198,198,200,0.4);
+  }
+  .tabbar .tab {
+    flex: 1;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-muted);
+    font-size: var(--f-body);
+    position: relative;
+  }
+  .tabbar .tab.active {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .tabbar .tab.active::after {
+    content: '';
+    position: absolute;
+    left: 30%; right: 30%; bottom: 0;
+    height: 2px; background: var(--accent);
+    border-radius: 1px;
+  }
+
+  /* ---- 主体 ---- */
+  .body {
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ---- hit zone ---- */
+  .hit-zone { height: 30px; flex-shrink: 0; }
+
+  /* ============================================================================
+   * 闹钟 tab —— 列表 + 右上 + 按钮（添加新闹钟）
+   * ========================================================================= */
+  .alarm-page {
+    padding: var(--sp-sm) var(--sp-md) 0;
+    height: 100%;
+    overflow-y: auto;
+  }
+  .alarm-empty {
+    text-align: center;
+    color: var(--text-muted);
+    padding: var(--sp-2xl) var(--sp-md);
+  }
+  .alarm-empty .ic { font-size: 36px; margin-bottom: var(--sp-sm); }
+  .alarm-card {
+    background: var(--panel);
+    border: 1px solid rgba(198,198,200,0.5);
+    border-radius: var(--r-lg);
+    padding: var(--sp-md);
+    margin-bottom: var(--sp-sm);
+    display: flex; flex-direction: row; align-items: center;
+    gap: var(--sp-md);
+  }
+  .alarm-card .left {
+    flex: 1; display: flex; flex-direction: column;
+  }
+  .alarm-card .time {
+    font-size: var(--f-num);
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+    font-weight: 500;
+  }
+  .alarm-card.off .time { color: var(--text-muted); }
+  .alarm-card .meta {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-top: 2px;
+  }
+  .alarm-card .switch {
+    width: 36px; height: 20px;
+    background: var(--accent);
+    border-radius: 10px;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .alarm-card .switch.off { background: var(--border); }
+  .alarm-card .switch::after {
+    content: '';
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 16px; height: 16px;
+    background: #fff;
+    border-radius: 50%;
+    transition: none;
+  }
+  .alarm-card .switch.off::after { left: 18px; }
+  .alarm-card.off .switch::after { left: 18px; }
+  .alarm-fab {
+    position: absolute;
+    right: 16px; top: 30px;
+    width: 28px; height: 28px;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; font-weight: 600;
+    z-index: 10;
+  }
+
+  /* ============================================================================
+   * 世界时钟 tab
+   * ========================================================================= */
+  .world-page {
+    padding: var(--sp-sm) var(--sp-md) 0;
+    height: 100%;
+    overflow-y: auto;
+  }
+  .world-card {
+    background: var(--panel);
+    border: 1px solid rgba(198,198,200,0.5);
+    border-radius: var(--r-lg);
+    padding: var(--sp-md);
+    margin-bottom: var(--sp-sm);
+    display: flex; flex-direction: row; align-items: center;
+  }
+  .world-card .left { flex: 1; display: flex; flex-direction: column; }
+  .world-card .city {
+    color: var(--text);
+    font-size: var(--f-body);
+    font-weight: 500;
+  }
+  .world-card .delta {
+    color: var(--text-muted);
+    font-size: 11px;
+    margin-top: 2px;
+  }
+  .world-card .time {
+    color: var(--text);
+    font-size: var(--f-num);
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+  }
+
+  /* ============================================================================
+   * 秒表 tab
+   * ========================================================================= */
+  .stop-page {
+    height: 100%;
+    display: flex; flex-direction: column;
+    align-items: center;
+    padding-top: var(--sp-md);
+  }
+  .stop-circle {
+    width: 180px; height: 180px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  .stop-circle .big {
+    font-size: 36px;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    font-weight: 500;
+  }
+  .stop-circle .small {
+    font-size: 14px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    margin-top: 4px;
+  }
+  .stop-buttons {
+    display: flex; flex-direction: row;
+    gap: var(--sp-2xl);
+    margin-top: var(--sp-md);
+  }
+  .stop-btn {
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .stop-btn.start { background: var(--ok); }
+  .stop-btn.stop  { background: var(--err); }
+  .stop-btn.lap   { background: var(--text-muted); }
+  .stop-btn.reset { background: var(--text-muted); }
+
+  /* ============================================================================
+   * 计时器 tab
+   * ========================================================================= */
+  .timer-page {
+    height: 100%;
+    display: flex; flex-direction: column;
+    align-items: center;
+    padding-top: var(--sp-md);
+  }
+  .timer-circle {
+    width: 180px; height: 180px;
+    border-radius: 50%;
+    border: 6px solid var(--accent);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    position: relative;
+  }
+  .timer-circle::after {
+    /* 进度环示意：剩余部分用淡色 */
+    content: ''; position: absolute; inset: -6px;
+    border-radius: 50%;
+    border: 6px solid transparent;
+  }
+  .timer-circle .big {
+    font-size: 36px;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    font-weight: 500;
+  }
+  .timer-circle .small {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+  .timer-buttons {
+    display: flex; flex-direction: row;
+    gap: var(--sp-2xl);
+    margin-top: var(--sp-md);
+  }
+  .timer-btn {
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .timer-btn.start  { background: var(--ok); }
+  .timer-btn.pause  { background: var(--warn); }
+  .timer-btn.cancel { background: var(--text-muted); }
+
+  .timer-presets {
+    display: flex; flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+    margin-top: var(--sp-md);
+    padding: 0 var(--sp-md);
+  }
+  .timer-presets .chip {
+    background: var(--panel);
+    border: 1px solid rgba(198,198,200,0.5);
+    color: var(--text);
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 12px;
+  }
+  .timer-presets .chip.active {
+    background: var(--accent); color: #fff;
+    border-color: var(--accent);
+  }
+
+  /* ---- 标签注释 ---- */
+  .meta-label {
+    text-align: center; color: #666; font-size: 9px;
+    font-family: ui-monospace, monospace;
+    margin-top: 6px;
+  }
+</style>
+</head>
+<body>
+
+<div class="stages-row">
+
+  <!-- ========== Tab 1: 闹钟 ========== -->
+  <div class="stage">
+    <div class="meta">v1 · 闹钟</div>
+    <div class="screen">
+      <div class="statusbar">
+        <span>14:32</span>
+        <span class="battery"><span class="fill"></span><span class="pct">87</span></span>
+      </div>
+      <div class="tabbar">
+        <div class="tab active">闹钟</div>
+        <div class="tab">世界</div>
+        <div class="tab">秒表</div>
+        <div class="tab">计时</div>
+      </div>
+      <div class="body" style="position: relative;">
+        <div class="alarm-fab">+</div>
+        <div class="alarm-page">
+          <div class="alarm-card">
+            <div class="left">
+              <span class="time">07:30</span>
+              <span class="meta">工作日 · 起床</span>
+            </div>
+            <div class="switch"></div>
+          </div>
+          <div class="alarm-card off">
+            <div class="left">
+              <span class="time">12:00</span>
+              <span class="meta">每天 · 午休</span>
+            </div>
+            <div class="switch off"></div>
+          </div>
+          <div class="alarm-card">
+            <div class="left">
+              <span class="time">22:30</span>
+              <span class="meta">每天 · 睡觉</span>
+            </div>
+            <div class="switch"></div>
+          </div>
+        </div>
+      </div>
+      <div class="hit-zone"></div>
+    </div>
+    <div class="meta-label">闹钟 · 列表 + 右上 + 按钮添加 + 切换开关</div>
+  </div>
+
+  <!-- ========== Tab 2: 世界时钟 ========== -->
+  <div class="stage">
+    <div class="meta">v1 · 世界</div>
+    <div class="screen">
+      <div class="statusbar">
+        <span>14:32</span>
+        <span class="battery"><span class="fill"></span><span class="pct">87</span></span>
+      </div>
+      <div class="tabbar">
+        <div class="tab">闹钟</div>
+        <div class="tab active">世界</div>
+        <div class="tab">秒表</div>
+        <div class="tab">计时</div>
+      </div>
+      <div class="body" style="position: relative;">
+        <div class="alarm-fab">+</div>
+        <div class="world-page">
+          <div class="world-card">
+            <div class="left">
+              <span class="city">北京</span>
+              <span class="delta">本地时间</span>
+            </div>
+            <span class="time">14:32</span>
+          </div>
+          <div class="world-card">
+            <div class="left">
+              <span class="city">东京</span>
+              <span class="delta">+1h</span>
+            </div>
+            <span class="time">15:32</span>
+          </div>
+          <div class="world-card">
+            <div class="left">
+              <span class="city">伦敦</span>
+              <span class="delta">-7h</span>
+            </div>
+            <span class="time">07:32</span>
+          </div>
+          <div class="world-card">
+            <div class="left">
+              <span class="city">纽约</span>
+              <span class="delta">-13h · 昨天</span>
+            </div>
+            <span class="time">01:32</span>
+          </div>
+        </div>
+      </div>
+      <div class="hit-zone"></div>
+    </div>
+    <div class="meta-label">世界 · 列表 + 添加按钮 + 时差显示</div>
+  </div>
+
+  <!-- ========== Tab 3: 秒表 ========== -->
+  <div class="stage">
+    <div class="meta">v1 · 秒表</div>
+    <div class="screen">
+      <div class="statusbar">
+        <span>14:32</span>
+        <span class="battery"><span class="fill"></span><span class="pct">87</span></span>
+      </div>
+      <div class="tabbar">
+        <div class="tab">闹钟</div>
+        <div class="tab">世界</div>
+        <div class="tab active">秒表</div>
+        <div class="tab">计时</div>
+      </div>
+      <div class="body">
+        <div class="stop-page">
+          <div class="stop-circle">
+            <div class="big">02:14</div>
+            <div class="small">.358</div>
+          </div>
+          <div class="stop-buttons">
+            <div class="stop-btn lap">计次</div>
+            <div class="stop-btn stop">停止</div>
+          </div>
+        </div>
+      </div>
+      <div class="hit-zone"></div>
+    </div>
+    <div class="meta-label">秒表 · 大圆 + 大数字 + 计次/停止</div>
+  </div>
+
+  <!-- ========== Tab 4: 计时器 ========== -->
+  <div class="stage">
+    <div class="meta">v1 · 计时</div>
+    <div class="screen">
+      <div class="statusbar">
+        <span>14:32</span>
+        <span class="battery"><span class="fill"></span><span class="pct">87</span></span>
+      </div>
+      <div class="tabbar">
+        <div class="tab">闹钟</div>
+        <div class="tab">世界</div>
+        <div class="tab">秒表</div>
+        <div class="tab active">计时</div>
+      </div>
+      <div class="body">
+        <div class="timer-page">
+          <div class="timer-circle">
+            <div class="big">04:32</div>
+            <div class="small">剩余</div>
+          </div>
+          <div class="timer-presets">
+            <div class="chip">1分</div>
+            <div class="chip">3分</div>
+            <div class="chip active">5分</div>
+            <div class="chip">10分</div>
+            <div class="chip">30分</div>
+          </div>
+          <div class="timer-buttons">
+            <div class="timer-btn cancel">取消</div>
+            <div class="timer-btn pause">暂停</div>
+          </div>
+        </div>
+      </div>
+      <div class="hit-zone"></div>
+    </div>
+    <div class="meta-label">计时 · 圆环进度 + 预设快捷 + 控制按钮</div>
+  </div>
+
+</div>
+
+<div class="toolbar">
+  <button id="btn-grid">Toggle 8px Grid</button>
+</div>
+
+<script>
+  document.getElementById('btn-grid').onclick = function() {
+    document.body.classList.toggle('show-grid');
+    this.classList.toggle('on');
+  };
+</script>
+
+</body>
+</html>
