@@ -196,25 +196,6 @@ class UploaderClient:
         self._raise_if_bad(st, "END")
         logger.info("upload %s: done", path_in_fs)
 
-    async def upload_app(
-        self,
-        app_id: str,
-        main_js_path: str,
-        *,
-        display_name: Optional[str] = None,
-        on_progress: Optional[ProgressCb] = None,
-    ) -> None:
-        """上传一个完整的 app：先 manifest.json，再 main.js。
-
-        display_name: manifest.name 字段；缺省时用 app_id 占位。
-        on_progress: 仅给 main.js 用（manifest 太小不报告进度）。
-        """
-        import json
-        manifest = {"id": app_id, "name": display_name or app_id, "version": "1.0.0"}
-        manifest_bytes = json.dumps(manifest, ensure_ascii=False).encode("utf-8")
-        await self.upload_bytes(f"{app_id}/manifest.json", manifest_bytes)
-        await self.upload_file(f"{app_id}/main.js", main_js_path, on_progress=on_progress)
-
     async def upload_app_pack(
         self,
         app_id: str,

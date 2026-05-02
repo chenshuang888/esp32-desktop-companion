@@ -9,10 +9,11 @@ GUI 入口：python -m companion（在 GUI 的 Upload 页操作）
 
     async def main():
         async with UploaderClient(device_name="ESP32") as c:
-            # 推荐：一次性传完整 app（含 manifest）
-            await c.upload_app("echo2", "echo2.js", display_name="回声示范")
+            # 推荐：传整个 app 包目录（含 main.js + 可选 manifest/icon/assets）
+            await c.upload_app_pack("echo", "scripts/echo_pkg",
+                                    display_name="回声示范")
             print(await c.list_apps())
-            await c.delete_app("echo2")
+            await c.delete_app("echo")
 
     asyncio.run(main())
 """

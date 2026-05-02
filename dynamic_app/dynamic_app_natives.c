@@ -1303,6 +1303,22 @@ esp_err_t dynamic_app_natives_bind(JSContext *ctx)
     (void)JS_SetPropertyStr(ctx, icons, "CHEVRON_RIGHT", JS_NewString(ctx, "\xEE\x97\x8C"));
     (void)JS_SetPropertyStr(ctx, icons, "DOT",           JS_NewString(ctx, "\xEE\xBD\x8A"));
     (void)JS_SetPropertyStr(ctx, icons, "DOT_SMALL",     JS_NewString(ctx, "\xEE\x81\xA1"));
+    /* 业务 app 图标（与 dynamic_app_registry.c::k_icon_table 一致） */
+    (void)JS_SetPropertyStr(ctx, icons, "ALARM",         JS_NewString(ctx, "\xEE\xA1\x95"));
+    (void)JS_SetPropertyStr(ctx, icons, "TIMER",         JS_NewString(ctx, "\xEE\x90\xA5"));
+    (void)JS_SetPropertyStr(ctx, icons, "STOPWATCH",     JS_NewString(ctx, "\xEE\x90\xA5"));
+    (void)JS_SetPropertyStr(ctx, icons, "HABIT",         JS_NewString(ctx, "\xEE\xA1\xAC"));
+    (void)JS_SetPropertyStr(ctx, icons, "NOTE",          JS_NewString(ctx, "\xEE\xA1\xB3"));
+    (void)JS_SetPropertyStr(ctx, icons, "GAME",          JS_NewString(ctx, "\xEE\x8C\xB8"));
+    (void)JS_SetPropertyStr(ctx, icons, "CALCULATOR",    JS_NewString(ctx, "\xEE\xA9\x9F"));
+    (void)JS_SetPropertyStr(ctx, icons, "IMAGE",         JS_NewString(ctx, "\xEE\x8F\xB4"));
+    (void)JS_SetPropertyStr(ctx, icons, "MEMORY",        JS_NewString(ctx, "\xEE\x8C\xA2"));
+    (void)JS_SetPropertyStr(ctx, icons, "DASHBOARD",     JS_NewString(ctx, "\xEE\xA1\xB1"));
+    (void)JS_SetPropertyStr(ctx, icons, "PUZZLE",        JS_NewString(ctx, "\xEE\xA1\xBB"));
+    (void)JS_SetPropertyStr(ctx, icons, "TARGET",        JS_NewString(ctx, "\xEE\x86\xB3"));
+    (void)JS_SetPropertyStr(ctx, icons, "PETS",          JS_NewString(ctx, "\xEE\xA4\x9D"));
+    (void)JS_SetPropertyStr(ctx, icons, "AQUARIUM",      JS_NewString(ctx, "\xEE\xA4\x9D"));
+    (void)JS_SetPropertyStr(ctx, icons, "ECHO",          JS_NewString(ctx, "\xEE\xBD\x89"));
     (void)JS_SetPropertyStr(ctx, sys, "icons", icons);
 
     /* sys.tokens.* —— 与 app/ui/ui_tokens.h 同步的设计 token。

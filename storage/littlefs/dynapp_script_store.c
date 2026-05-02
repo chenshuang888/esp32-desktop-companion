@@ -524,6 +524,17 @@ esp_err_t dynapp_manifest_read(const char *app_id, dynapp_manifest_t *out)
         memcpy(out->name, vs, cp);
         out->name[cp] = '\0';
     }
+    /* 可选字段：icon / iconColor。缺失不算错误，由调用方回退默认 */
+    if (find_string_field((const char *)buf, len, "icon", &vs, &vl)) {
+        size_t cp = vl < sizeof(out->icon) - 1 ? vl : sizeof(out->icon) - 1;
+        memcpy(out->icon, vs, cp);
+        out->icon[cp] = '\0';
+    }
+    if (find_string_field((const char *)buf, len, "iconColor", &vs, &vl)) {
+        size_t cp = vl < sizeof(out->icon_color) - 1 ? vl : sizeof(out->icon_color) - 1;
+        memcpy(out->icon_color, vs, cp);
+        out->icon_color[cp] = '\0';
+    }
     dynapp_script_store_release(buf);
 
     if (!ok_id || !ok_name) return ESP_ERR_INVALID_ARG;

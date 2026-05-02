@@ -1,6 +1,7 @@
-"""Upload 页：单文件 / 目录包上传 + 进度条 + app 列表。
+"""Upload 页：app 包目录上传 + 进度条 + app 列表。
 
 通过 bus.emit("upload:request", {"kind": ..., "args": ..., "future": fut}) 触发。
+kind 取值：pack | list | delete。
 """
 
 from __future__ import annotations
@@ -22,7 +23,6 @@ class UploadPage(ctk.CTkFrame):
     def __init__(self, master, app) -> None:
         super().__init__(master, fg_color="transparent")
         self._app = app
-        self._file_path: str | None = None
         self._folder_path: str | None = None
         self._app_id_var = ctk.StringVar()
         self._build()
@@ -37,24 +37,20 @@ class UploadPage(ctk.CTkFrame):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(2, weight=1)
 
-        # 选择行
+        # 选择行（仅目录）
         row = Card(self)
         row.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 8))
         row.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(row, text="文件 / 目录",
+        ctk.CTkLabel(row, text="App 包目录",
                       text_color=COLOR_MUTED, width=80, anchor="w") \
             .grid(row=0, column=0, padx=(14, 4), pady=10)
         self._sel_lbl = ctk.CTkLabel(row, text="(未选择)",
                                       text_color=COLOR_TEXT, anchor="w")
         self._sel_lbl.grid(row=0, column=1, sticky="ew", padx=4, pady=10)
-        ctk.CTkButton(row, text="选 .js",  width=90,
-                       fg_color=COLOR_PANEL_HI, hover_color=COLOR_ACCENT,
-                       command=self._pick_file) \
-            .grid(row=0, column=2, padx=4, pady=10)
         ctk.CTkButton(row, text="选目录", width=90,
                        fg_color=COLOR_PANEL_HI, hover_color=COLOR_ACCENT,
                        command=self._pick_dir) \
-            .grid(row=0, column=3, padx=(4, 14), pady=10)
+            .grid(row=0, column=2, padx=(4, 14), pady=10)
 
         # app_id + 上传 / 列表 / 删除
         ctrl = Card(self)
@@ -101,23 +97,11 @@ class UploadPage(ctk.CTkFrame):
 
     # actions
 
-    def _pick_file(self) -> None:
-        p = filedialog.askopenfilename(filetypes=[("JavaScript", "*.js")])
-        if not p:
-            return
-        self._file_path = p
-        self._folder_path = None
-        self._sel_lbl.configure(text=os.path.basename(p))
-        if not self._app_id_var.get():
-            stem = os.path.splitext(os.path.basename(p))[0]
-            self._app_id_var.set(stem)
-
     def _pick_dir(self) -> None:
         p = filedialog.askdirectory()
         if not p:
             return
         self._folder_path = p
-        self._file_path = None
         self._sel_lbl.configure(text=p)
         if not self._app_id_var.get():
             self._app_id_var.set(os.path.basename(p.rstrip("/\\")))
@@ -127,17 +111,10 @@ class UploadPage(ctk.CTkFrame):
         if not app_id:
             self._step_lbl.configure(text="App ID 必填", text_color=COLOR_ERR)
             return
-        if self._folder_path:
-            kind = "pack"
-            args = {"app_id": app_id, "pack_dir": self._folder_path}
-        elif self._file_path:
-            kind = "file"
-            args = {"path_in_fs": f"{app_id}/main.js",
-                    "local_path":  self._file_path}
-        else:
-            self._step_lbl.configure(text="先选择文件或目录", text_color=COLOR_ERR)
+        if not self._folder_path:
+            self._step_lbl.configure(text="先选择 app 包目录", text_color=COLOR_ERR)
             return
-        self._submit(kind, args)
+        self._submit("pack", {"app_id": app_id, "pack_dir": self._folder_path})
 
     def _do_list(self) -> None:
         self._submit("list", {})

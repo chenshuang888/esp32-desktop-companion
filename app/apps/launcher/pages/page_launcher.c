@@ -21,7 +21,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
-#include <sys/stat.h>
 
 static const char *TAG = "page_launcher";
 
@@ -55,8 +54,8 @@ typedef struct {
     const char   *label;
     lv_color_t    color;
     char         *dyn_name;     /* CELL_DYNAPP 时 strdup */
-    bool          dyn_has_image;
-    char          dyn_icon_path[80];
+    char          dyn_icon[8];  /* CELL_DYNAPP 时拷 manifest icon UTF-8 codepoint，
+                                 * 与 c->icon 共享语义；这里独立缓冲以便随 cell 一起释放 */
 } cell_def_t;
 
 typedef struct {
@@ -73,8 +72,6 @@ typedef struct {
 
 static ui_t s_ui = {0};
 static volatile bool s_dirty = false;
-
-static const lv_color_t DYNAPP_COLOR = LV_COLOR_MAKE(0x34, 0xC7, 0x59);
 
 /* 前向 */
 static void on_cell_clicked(lv_event_t *e);
@@ -177,21 +174,21 @@ static void cells_collect(void)
         cell_def_t *c = &s_ui.cells[s_ui.cell_count++];
         c->kind     = CELL_DYNAPP;
         c->app_id   = NULL;
-        c->icon     = ICON_APPS;
         c->label    = entries[i].display;
-        c->color    = DYNAPP_COLOR;
         c->dyn_name = strdup(entries[i].id);
 
-        snprintf(c->dyn_icon_path, sizeof(c->dyn_icon_path),
-                 "/littlefs/apps/%s/icon.bin", entries[i].id);
-        struct stat st;
-        c->dyn_has_image = (stat(c->dyn_icon_path, &st) == 0 && S_ISREG(st.st_mode));
-        if (c->dyn_has_image) {
-            char tmp[88];
-            snprintf(tmp, sizeof(tmp), "A:%s", c->dyn_icon_path);
-            strncpy(c->dyn_icon_path, tmp, sizeof(c->dyn_icon_path) - 1);
-            c->dyn_icon_path[sizeof(c->dyn_icon_path) - 1] = '\0';
+        /* manifest 指定了 icon → 拷 UTF-8 字节走字体路径；否则回退 ICON_APPS。
+         * 与原生 app 完全一致：lv_label + 36px Material Symbols 字体。 */
+        if (entries[i].icon[0]) {
+            strncpy(c->dyn_icon, entries[i].icon, sizeof(c->dyn_icon) - 1);
+            c->dyn_icon[sizeof(c->dyn_icon) - 1] = '\0';
+            c->icon = c->dyn_icon;
+        } else {
+            c->icon = ICON_APPS;
         }
+        /* manifest.iconColor 缺失（=0）回退中性灰，与"通用 app fallback"配色一致 */
+        c->color = lv_color_hex(entries[i].icon_color
+                                ? entries[i].icon_color : 0x6E6E73);
     }
 
     s_ui.page_count = (s_ui.cell_count + CELLS_PER_PAGE - 1) / CELLS_PER_PAGE;
@@ -219,15 +216,11 @@ static lv_obj_t *create_cell_obj(lv_obj_t *parent, cell_def_t *c)
     lv_obj_set_style_pad_row(btn, UI_SP_XS, 0);
     lv_obj_set_style_pad_all(btn, 0, 0);
 
-    if (c->kind == CELL_DYNAPP && c->dyn_has_image) {
-        lv_obj_t *img = lv_image_create(btn);
-        lv_image_set_src(img, c->dyn_icon_path);
-    } else {
-        lv_obj_t *icon = lv_label_create(btn);
-        lv_label_set_text(icon, c->icon);
-        lv_obj_set_style_text_font (icon, APP_FONT_ICONS_36, 0);
-        lv_obj_set_style_text_color(icon, c->color, 0);
-    }
+    /* 静态 + 动态 app 走同一渲染路径：36px 字体图标 + iOS 浅色文字 */
+    lv_obj_t *icon = lv_label_create(btn);
+    lv_label_set_text(icon, c->icon);
+    lv_obj_set_style_text_font (icon, APP_FONT_ICONS_36, 0);
+    lv_obj_set_style_text_color(icon, c->color, 0);
 
     lv_obj_t *lbl = lv_label_create(btn);
     lv_label_set_text(lbl, c->label);

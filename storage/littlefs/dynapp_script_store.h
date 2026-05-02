@@ -70,6 +70,13 @@ int  dynapp_script_store_list(char out[][DYNAPP_SCRIPT_STORE_MAX_NAME + 1], int 
 typedef struct {
     char id[DYNAPP_SCRIPT_STORE_MAX_NAME + 1];
     char name[32];     /* 显示名，UTF-8，可中文 */
+    /* 可选：launcher 图标，对应 app/app_fonts.h::ICON_* 名字（去前缀，如
+     * "ALARM" / "NOTIFICATIONS"）。固件查表翻译为字体 codepoint。
+     * 字段为空时 launcher 回退到通用 ICON_APPS。 */
+    char icon[24];
+    /* 可选：launcher 图标颜色，对应 app/ui/ui_tokens.h::UI_C_* 名字（去前缀，
+     * 如 "ACCENT" / "WARN" / "OK"）。空时回退到中性灰。 */
+    char icon_color[16];
 } dynapp_manifest_t;
 
 esp_err_t dynapp_manifest_read(const char *app_id, dynapp_manifest_t *out);

@@ -263,12 +263,19 @@ dynapp_host 在动态 app 启动前已经做好：
 如果你的 app 需要新汉字，要在 `app/fonts/` 加进字体子集源。
 
 ### 5.2 图标（icon24/icon36）
-Material Symbols Rounded 字体子集，目前覆盖 16 个常用图标（蓝牙、时钟、铃铛、音乐、齿轮、亮度、信息、日历、日历编辑、apps、chevron、点 等）。
+Material Symbols Rounded 字体子集，目前覆盖 33 个 codepoint：
+
+**通用 / 系统**：BLUETOOTH / BT_DISABLED / SCHEDULE / WEATHER / NOTIFICATIONS / MUSIC / TUNE / SETTINGS / BRIGHTNESS / INFO / EDIT_CALENDAR / APPS / CHEVRON_LEFT / CHEVRON_RIGHT / DOT / DOT_SMALL
+
+**业务 app**：ALARM / TIMER（=STOPWATCH）/ HABIT / NOTE / GAME / CALCULATOR / IMAGE / MEMORY / DASHBOARD / PUZZLE / TARGET / PETS（=AQUARIUM）/ ECHO
 
 加新图标流程：
-1. `app/app_fonts.h` 加 `ICON_XXX` 宏（UTF-8 codepoint）
-2. `dynamic_app_natives.c::sys.icons.*` 加一行暴露
-3. 重编固件
+1. `app/fonts/material_icons_subset.ttf` 用 pyftsubset 重新生成（加新 codepoint）
+2. `app/app_fonts.h` 加 `ICON_XXX` 宏
+3. `dynamic_app/dynamic_app_registry.c::k_icon_table` 加一行（launcher manifest 用）
+4. `dynamic_app_natives.c::sys.icons.*` 加一行（动态 app 内部 label 用）
+5. `tools/make_pack_manifest.py::ICONS` 加一行（manifest 工具校验用）
+6. 重编固件
 
 不需要改前端代码，业务直接 `sys.icons.NEW_ICON` 即可。
 

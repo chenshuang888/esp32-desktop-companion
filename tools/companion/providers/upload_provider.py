@@ -92,12 +92,7 @@ class UploadProvider(Provider):
         self._busy = True
         ctx.bus.emit("upload:begin", kind)
         try:
-            if kind == "file":
-                await self._uploader.upload_file(
-                    args["path_in_fs"], args["local_path"],
-                    on_progress=self._make_progress_emitter(ctx))
-                self._set_result(fut, None)
-            elif kind == "pack":
+            if kind == "pack":
                 def on_step(filename: str, idx: int, total: int) -> None:
                     ctx.bus.emit("upload:step", (filename, idx, total))
                 await self._uploader.upload_app_pack(
