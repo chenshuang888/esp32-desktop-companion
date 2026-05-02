@@ -15,6 +15,7 @@ from .pages.log import LogPage
 from .pages.music import MusicPage
 from .pages.notify import NotifyPage
 from .pages.upload import UploadPage
+from .pages.gomoku import GomokuPage
 from .theme import (
     COLOR_ACCENT, COLOR_BG, COLOR_MUTED, COLOR_PANEL, COLOR_PANEL_HI,
     COLOR_SIDEBAR, COLOR_TEXT, CTK_APPEARANCE, CTK_THEME, SIDEBAR_W,
@@ -30,6 +31,7 @@ PAGE_DEFS = [
     ("music",  "音乐",   MusicPage),
     ("upload", "上传",   UploadPage),
     ("notify", "通知",   NotifyPage),
+    ("gomoku", "五子棋", GomokuPage),
     ("log",    "日志",   LogPage),
 ]
 

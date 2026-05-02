@@ -52,6 +52,20 @@ class BridgeProvider(Provider):
         self._router.register("music",   "req",   self._on_music_req)
         self._router.register("music",   "btn",   self._on_music_btn)
 
+        # gomoku：设备 → PC 的所有 type 都透到 bus（present/move/reset/resign/sync/leave）
+        self._router.register("gomoku_pkg", None, self._on_gomoku_fwd)
+
+        # GUI → 设备：GUI 页 emit("gomoku:tx", (type, body)) 由本 provider 发出去
+        async def _send_gomoku(payload: object) -> None:
+            if not isinstance(payload, tuple) or len(payload) != 2:
+                return
+            mtype, body = payload
+            await self.send("gomoku_pkg", str(mtype), body=body)
+
+        def _on_gomoku_tx(payload: object) -> None:
+            asyncio.create_task(_send_gomoku(payload))
+        self._unsubs.append(ctx.bus.on("gomoku:tx", _on_gomoku_tx))
+
         # bus 收到 a3a30003 notify → 解码 + dispatch
         def _on_tx(payload: object) -> None:
             data = payload if isinstance(payload, (bytes, bytearray)) else b""
@@ -178,6 +192,13 @@ class BridgeProvider(Provider):
         except Exception as e:
             if self._ctx:
                 self._ctx.bus.emit("log", ("warn", self.name, f"key: {e}"))
+
+    async def _on_gomoku_fwd(self, msg: dict) -> None:
+        if self._ctx is None:
+            return
+        body = msg.get("body") if isinstance(msg.get("body"), dict) else {}
+        # GUI 在 root.after 0 派发；emit_threadsafe 不需要这里走，bus 已在 loop 线程
+        self._ctx.bus.emit("gomoku:rx", (msg.get("type"), body))
 
     # ------------------------------------------------------------------
     # utils

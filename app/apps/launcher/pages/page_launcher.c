@@ -54,6 +54,8 @@ typedef struct {
     const char   *label;
     lv_color_t    color;
     char         *dyn_name;     /* CELL_DYNAPP 时 strdup */
+    char         *dyn_label;    /* CELL_DYNAPP 时 strdup 的 manifest.name，c->label 指向它；
+                                 * 静态 app 的 label 来自 app_descriptor 静态区，无需拷贝 */
     char          dyn_icon[8];  /* CELL_DYNAPP 时拷 manifest icon UTF-8 codepoint，
                                  * 与 c->icon 共享语义；这里独立缓冲以便随 cell 一起释放 */
 } cell_def_t;
@@ -142,6 +144,10 @@ static void cells_clear(void)
             free(s_ui.cells[i].dyn_name);
             s_ui.cells[i].dyn_name = NULL;
         }
+        if (s_ui.cells[i].dyn_label) {
+            free(s_ui.cells[i].dyn_label);
+            s_ui.cells[i].dyn_label = NULL;
+        }
     }
     memset(s_ui.cells, 0, sizeof(s_ui.cells));
     s_ui.cell_count = 0;
@@ -174,7 +180,10 @@ static void cells_collect(void)
         cell_def_t *c = &s_ui.cells[s_ui.cell_count++];
         c->kind     = CELL_DYNAPP;
         c->app_id   = NULL;
-        c->label    = entries[i].display;
+        /* entries 是栈上局部变量，display 字段必须拷贝；否则函数退出后
+         * cell.label 会指向被覆盖的栈内存，launcher 一进二出就显示乱码。 */
+        c->dyn_label = strdup(entries[i].display);
+        c->label    = c->dyn_label;
         c->dyn_name = strdup(entries[i].id);
 
         /* manifest 指定了 icon → 拷 UTF-8 字节走字体路径；否则回退 ICON_APPS。
