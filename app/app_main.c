@@ -19,6 +19,7 @@
 #include "weather_manager.h"
 #include "notify_manager.h"
 #include "media_manager.h"
+#include "playlist_manager.h"
 #include "system_manager.h"
 #include "backlight_storage.h"
 #include "time_storage.h"
@@ -53,6 +54,7 @@ static void ui_task(void *arg)
         weather_manager_process_pending();
         notify_manager_process_pending();
         media_manager_process_pending();
+        playlist_manager_process_pending();
         system_manager_process_pending();
         app_router_tick();           /* 转发到当前 app on_tick */
         lvgl_port_task_handler();

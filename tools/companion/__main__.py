@@ -41,7 +41,8 @@ def _build_companion(bus: EventBus, cfg_data: dict) -> Companion:
     if enabled.get("weather", True): comp.register(WeatherProvider())
     if enabled.get("notify", True):  comp.register(NotifyProvider())
     if enabled.get("system", True):  comp.register(SystemProvider())
-    if enabled.get("media", True):   comp.register(MediaProvider())
+    if enabled.get("media", True):
+        comp.register(MediaProvider(music_folder=cfg_data.get("music_folder")))
     if enabled.get("bridge", True):  comp.register(BridgeProvider())
     if enabled.get("upload", True):  comp.register(UploadProvider())
     return comp

@@ -5,3 +5,4 @@ psutil>=5.9
 winsdk>=1.0.0b10; sys_platform == "win32"
 pystray>=0.19
 Pillow>=10.0
+just_playback>=0.1.8

@@ -13,6 +13,10 @@ from typing import Tuple
 from ..constants import (
     CTS_STRUCT,
     MEDIA_ARTIST_MAX_BYTES, MEDIA_PAYLOAD_STRUCT, MEDIA_TITLE_MAX_BYTES,
+    MEDIA_MSG_NOWPLAYING, MEDIA_MSG_PLAYLIST_BEGIN, MEDIA_MSG_PLAYLIST_ITEM,
+    MEDIA_MSG_PLAYLIST_END,
+    MEDIA_PLAYLIST_BEGIN_STRUCT, MEDIA_PLAYLIST_ITEM_STRUCT,
+    MEDIA_PLAYLIST_TITLE_BYTES, MEDIA_PLAYLIST_ARTIST_BYTES,
     NOTIFY_BODY_MAX, NOTIFY_PRIO_NORMAL, NOTIFY_STRUCT, NOTIFY_TITLE_MAX,
     SYSTEM_STRUCT,
     WC_CLEAR, WC_CLOUDY, WC_FOG, WC_OVERCAST, WC_RAIN, WC_SNOW, WC_THUNDER,
@@ -151,7 +155,7 @@ def pack_system(cpu: int, mem: int, disk: int,
 # Media (92 B)
 # ---------------------------------------------------------------------------
 
-EMPTY_MEDIA_PAYLOAD = struct.pack(
+EMPTY_MEDIA_PAYLOAD = bytes([MEDIA_MSG_NOWPLAYING]) + struct.pack(
     MEDIA_PAYLOAD_STRUCT,
     0, 0, -1, -1, 0, 0,
     b"".ljust(48, b"\0"),
@@ -166,7 +170,7 @@ def pack_media(playing: bool, position_sec: int, duration_sec: int,
         sample_ts = int(_time.time())
     title_b  = utf8_fixed(title  or "", MEDIA_TITLE_MAX_BYTES,  48)
     artist_b = utf8_fixed(artist or "", MEDIA_ARTIST_MAX_BYTES, 32)
-    return struct.pack(
+    body = struct.pack(
         MEDIA_PAYLOAD_STRUCT,
         1 if playing else 0, 0,
         max(-1, min(int(position_sec), 32767)),
@@ -174,3 +178,22 @@ def pack_media(playing: bool, position_sec: int, duration_sec: int,
         0, int(sample_ts),
         title_b, artist_b,
     )
+    return bytes([MEDIA_MSG_NOWPLAYING]) + body
+
+
+def pack_playlist_begin(total_count: int, version: int) -> bytes:
+    body = struct.pack(MEDIA_PLAYLIST_BEGIN_STRUCT,
+                        total_count & 0xFFFF, version & 0xFFFF)
+    return bytes([MEDIA_MSG_PLAYLIST_BEGIN]) + body
+
+
+def pack_playlist_item(index: int, title: str, artist: str) -> bytes:
+    title_b  = utf8_fixed(title  or "", MEDIA_PLAYLIST_TITLE_BYTES,  40)
+    artist_b = utf8_fixed(artist or "", MEDIA_PLAYLIST_ARTIST_BYTES, 24)
+    body = struct.pack(MEDIA_PLAYLIST_ITEM_STRUCT,
+                        index & 0xFFFF, title_b, artist_b)
+    return bytes([MEDIA_MSG_PLAYLIST_ITEM]) + body
+
+
+def pack_playlist_end() -> bytes:
+    return bytes([MEDIA_MSG_PLAYLIST_END])

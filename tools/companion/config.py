@@ -32,6 +32,7 @@ DEFAULT: dict[str, Any] = {
         "bridge":  True,
         "upload":  True,
     },
+    "music_folder": str(Path(os.path.expanduser("~")) / "Music" / "Watch"),
     "notify_history": [],
 }
 

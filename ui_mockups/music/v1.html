@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Music v1 — 歌单页 + 详情页</title>
+<link rel="stylesheet" href="../_shared/tokens.css">
+<link rel="stylesheet" href="../_shared/frame.css">
+<style>
+  /* ============================================================================
+   * v1 思路：经典酷狗/网易云双页布局
+   *   Page A: 状态栏 + 歌单列表 + 50px 迷你播放器
+   *   Page B: 状态栏 + 旋转大圆封面 + 歌名/作者/时间 + 三个控制按钮
+   * 配色：iOS 浅色（与 weather/notifications 对齐）
+   * ========================================================================= */
+
+  /* ---- 共用：状态栏 ---- */
+  .statusbar {
+    height: 24px;
+    padding: 0 var(--sp-md);
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--text);
+    font-size: var(--f-body);
+    border-bottom: 1px solid rgba(198, 198, 200, 0.4);
+    background: var(--bg);
+  }
+  .statusbar .time { font-weight: 500; }
+  .statusbar .right {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--sp-xs);
+  }
+  .statusbar .bt {
+    width: 10px; height: 14px;
+    color: var(--accent);
+    font-size: 10px;
+  }
+  .statusbar .battery {
+    display: inline-flex; align-items: center;
+    width: 32px; height: 14px;
+    border: 1px solid var(--text);
+    border-radius: 3px;
+    position: relative;
+    padding: 1px;
+  }
+  .statusbar .battery::after {
+    content: '';
+    position: absolute;
+    right: -3px; top: 4px;
+    width: 2px; height: 6px;
+    background: var(--text);
+    border-radius: 0 1px 1px 0;
+  }
+  .statusbar .battery .fill {
+    height: 100%;
+    width: 80%;
+    background: var(--ok);
+    border-radius: 1px;
+  }
+  .statusbar .battery .pct {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; color: var(--text);
+    font-weight: 600;
+  }
+
+  /* ============================================================================
+   * Page A —— 歌单页
+   * ========================================================================= */
+
+  .page-a {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--bg);
+  }
+
+  /* 歌单标题行 */
+  .list-header {
+    height: 32px;
+    padding: 0 var(--sp-md);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .list-header .title {
+    font-size: var(--f-title);
+    color: var(--text);
+    font-weight: 600;
+  }
+  .list-header .count {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  /* 列表（剩余空间，可滚） */
+  .song-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 var(--sp-sm);
+  }
+  .song-item {
+    height: 44px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--sp-sm);
+    padding: 0 var(--sp-sm);
+    border-radius: var(--r-sm);
+  }
+  .song-item.playing {
+    background: rgba(0, 122, 255, 0.08);
+  }
+  .song-item .idx {
+    width: 16px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+  .song-item.playing .idx {
+    color: var(--accent);
+  }
+  .song-item .meta {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1px;
+  }
+  .song-item .name {
+    color: var(--text);
+    font-size: var(--f-body);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .song-item.playing .name {
+    color: var(--accent);
+    font-weight: 500;
+  }
+  .song-item .artist {
+    color: var(--text-muted);
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* 迷你播放器（底部 50px） */
+  .mini-player {
+    height: 50px;
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 0 var(--sp-sm);
+    gap: var(--sp-sm);
+    flex-shrink: 0;
+  }
+  .mini-player .cover {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--r-sm);
+    background: linear-gradient(135deg, #AF52DE, #007AFF);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 18px;
+  }
+  .mini-player .info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1px;
+  }
+  .mini-player .info .t {
+    color: var(--text);
+    font-size: var(--f-body);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 500;
+  }
+  .mini-player .info .a {
+    color: var(--text-muted);
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .mini-player .ctrls {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+  }
+  .mini-player .btn {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text);
+    font-size: 14px;
+    border-radius: var(--r-sm);
+  }
+  .mini-player .btn.play {
+    color: var(--accent);
+    font-size: 16px;
+  }
+
+  /* ============================================================================
+   * Page B —— 详情页
+   * ========================================================================= */
+
+  .page-b {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--bg);
+  }
+
+  /* 旋转大圆封面 */
+  .cover-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--sp-md) 0 0;
+  }
+  .cover-disc {
+    width: 160px;
+    height: 160px;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at center, var(--bg) 0 18px,
+                       transparent 18px 22px,
+                       #2a2a30 22px 24px,
+                       transparent 24px),
+      conic-gradient(from 0deg,
+        #AF52DE, #007AFF, #5AC8FA, #AF52DE);
+    position: relative;
+    animation: spin 8s linear infinite;
+  }
+  .cover-disc::before {
+    /* 中心钉孔 */
+    content: '';
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 12px; height: 12px;
+    background: var(--text);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .cover-disc::after {
+    /* 黑胶纹理（淡淡几圈）*/
+    content: '';
+    position: absolute;
+    inset: 28px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.15);
+    box-shadow:
+      inset 0 0 0 8px rgba(255,255,255,0.04),
+      inset 0 0 0 16px rgba(255,255,255,0.06),
+      inset 0 0 0 24px rgba(255,255,255,0.04);
+  }
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+
+  /* 歌名 / 作者 */
+  .song-info {
+    text-align: center;
+    padding: var(--sp-md) var(--sp-md) 0;
+  }
+  .song-info .t {
+    color: var(--text);
+    font-size: var(--f-title);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .song-info .a {
+    color: var(--text-muted);
+    font-size: var(--f-body);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* 进度条 + 时间 */
+  .progress-wrap {
+    padding: var(--sp-md) var(--sp-lg) var(--sp-sm);
+  }
+  .progress-bar {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    position: relative;
+  }
+  .progress-bar .fill {
+    height: 100%;
+    width: 35%;
+    background: var(--accent);
+    border-radius: 2px;
+  }
+  .progress-bar .knob {
+    position: absolute;
+    top: 50%; left: 35%;
+    width: 10px; height: 10px;
+    background: var(--accent);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .time-row {
+    margin-top: var(--sp-xs);
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  /* 三个大按钮 */
+  .ctrl-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-xl);
+    padding: var(--sp-sm) 0 var(--sp-lg);
+  }
+  .ctrl-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text);
+    font-size: 20px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+  }
+  .ctrl-btn.play {
+    width: 56px;
+    height: 56px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    font-size: 24px;
+  }
+
+  /* 标签注释 */
+  .label {
+    text-align: center;
+    color: #666;
+    font-size: 9px;
+    font-family: ui-monospace, monospace;
+    margin-top: 4px;
+  }
+</style>
+</head>
+<body>
+
+<div class="stages-row">
+
+  <!-- ======================== Page A：歌单页 ======================== -->
+  <div class="stage">
+    <div class="meta">v1 · Page A · 歌单 · 240×320</div>
+    <div class="screen">
+      <div class="page-a">
+        <!-- 状态栏 -->
+        <div class="statusbar">
+          <span class="time">14:32</span>
+          <div class="right">
+            <span class="bt">📶</span>
+            <span class="battery">
+              <span class="fill"></span>
+              <span class="pct">87</span>
+            </span>
+          </div>
+        </div>
+
+        <!-- 歌单标题 -->
+        <div class="list-header">
+          <span class="title">本地音乐</span>
+          <span class="count">128 首</span>
+        </div>
+
+        <!-- 列表 -->
+        <div class="song-list">
+          <div class="song-item playing">
+            <span class="idx">▶</span>
+            <div class="meta">
+              <div class="name">起风了</div>
+              <div class="artist">买辣椒也用券</div>
+            </div>
+          </div>
+          <div class="song-item">
+            <span class="idx">2</span>
+            <div class="meta">
+              <div class="name">兰亭序</div>
+              <div class="artist">周杰伦</div>
+            </div>
+          </div>
+          <div class="song-item">
+            <span class="idx">3</span>
+            <div class="meta">
+              <div class="name">海阔天空</div>
+              <div class="artist">Beyond</div>
+            </div>
+          </div>
+          <div class="song-item">
+            <span class="idx">4</span>
+            <div class="meta">
+              <div class="name">夜曲</div>
+              <div class="artist">周杰伦</div>
+            </div>
+          </div>
+          <div class="song-item">
+            <span class="idx">5</span>
+            <div class="meta">
+              <div class="name">青花瓷</div>
+              <div class="artist">周杰伦</div>
+            </div>
+          </div>
+          <div class="song-item">
+            <span class="idx">6</span>
+            <div class="meta">
+              <div class="name">稻香</div>
+              <div class="artist">周杰伦</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 迷你播放器（点击 → Page B）-->
+        <div class="mini-player">
+          <div class="cover">♪</div>
+          <div class="info">
+            <div class="t">起风了</div>
+            <div class="a">买辣椒也用券</div>
+          </div>
+          <div class="ctrls">
+            <span class="btn">⏮</span>
+            <span class="btn play">⏸</span>
+            <span class="btn">⏭</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="label">点击列表 → 切歌；点 mini-player → Page B</div>
+  </div>
+
+  <!-- ======================== Page B：详情页 ======================== -->
+  <div class="stage">
+    <div class="meta">v1 · Page B · 详情 · 240×320</div>
+    <div class="screen">
+      <div class="page-b">
+        <!-- 状态栏 -->
+        <div class="statusbar">
+          <span class="time">14:32</span>
+          <div class="right">
+            <span class="bt">📶</span>
+            <span class="battery">
+              <span class="fill"></span>
+              <span class="pct">87</span>
+            </span>
+          </div>
+        </div>
+
+        <!-- 旋转大圆 -->
+        <div class="cover-wrap">
+          <div class="cover-disc"></div>
+        </div>
+
+        <!-- 歌名作者 -->
+        <div class="song-info">
+          <div class="t">起风了</div>
+          <div class="a">买辣椒也用券</div>
+        </div>
+
+        <!-- 进度条 -->
+        <div class="progress-wrap">
+          <div class="progress-bar">
+            <div class="fill"></div>
+            <div class="knob"></div>
+          </div>
+          <div class="time-row">
+            <span>1:54</span>
+            <span>5:25</span>
+          </div>
+        </div>
+
+        <!-- 控制按钮 -->
+        <div class="ctrl-row">
+          <span class="ctrl-btn">⏮</span>
+          <span class="ctrl-btn play">⏸</span>
+          <span class="ctrl-btn">⏭</span>
+        </div>
+      </div>
+    </div>
+    <div class="label">下滑 → 回到 Page A</div>
+  </div>
+
+</div>
+
+<div class="toolbar">
+  <button id="btn-grid">Toggle 8px Grid</button>
+</div>
+
+<script>
+  document.getElementById('btn-grid').onclick = function() {
+    document.body.classList.toggle('show-grid');
+    this.classList.toggle('on');
+  };
+</script>
+
+</body>
+</html>

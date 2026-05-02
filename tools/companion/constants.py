@@ -47,11 +47,28 @@ SYSTEM_CPU_TEMP_INVALID = -32768
 # ==== Media Service ====
 MEDIA_CHAR_UUID        = "8a5c0008-0000-4aef-b87e-4fa1e0c7e0f6"   # WRITE
 MEDIA_BUTTON_CHAR_UUID = "8a5c000d-0000-4aef-b87e-4fa1e0c7e0f6"   # NOTIFY
-MEDIA_PAYLOAD_STRUCT   = "<BBhhHI48s32s"   # 92 B
+MEDIA_PAYLOAD_STRUCT   = "<BBhhHI48s32s"   # 92 B（NOWPLAYING 子载荷）
 MEDIA_BTN_STRUCT       = "<BBH"            # 4 B
 MEDIA_TITLE_MAX_BYTES  = 47
 MEDIA_ARTIST_MAX_BYTES = 31
 MEDIA_PERIODIC_RESYNC_S = 10.0
+
+# v2 协议：WRITE/NOTIFY 首字节 type 分发
+MEDIA_MSG_NOWPLAYING       = 0x01
+MEDIA_MSG_PLAYLIST_BEGIN   = 0x02
+MEDIA_MSG_PLAYLIST_ITEM    = 0x03
+MEDIA_MSG_PLAYLIST_END     = 0x04
+MEDIA_NOTIFY_BUTTON        = 0x01
+MEDIA_NOTIFY_PLAY_TRACK    = 0x02
+
+# 歌单（与 ESP 端 media_service.h 严格对齐）
+MEDIA_PLAYLIST_BEGIN_STRUCT = "<HH"             # total_count, version
+MEDIA_PLAYLIST_ITEM_STRUCT  = "<H40s24s"        # index, title[40], artist[24]
+MEDIA_PLAYLIST_TITLE_BYTES  = 39                # 末尾留 \0
+MEDIA_PLAYLIST_ARTIST_BYTES = 23
+MEDIA_PLAYLIST_MAX_ITEMS    = 50
+MEDIA_PLAY_TRACK_STRUCT     = "<HH"             # track_index, seq
+MEDIA_PLAYLIST_PUSH_GAP_S   = 0.04              # 每条 ITEM 之间 gap
 
 # ==== Dynapp Bridge (a3a3) ====
 BRIDGE_SVC_UUID = "a3a30001-0000-4aef-b87e-4fa1e0c7e0f6"

@@ -24,7 +24,8 @@ idf_component_register(
         "apps/notifications/pages/page_notifications.c"
 
         "apps/music/music_app.c"
-        "apps/music/pages/page_music.c"
+        "apps/music/pages/page_music_list.c"
+        "apps/music/pages/page_music_detail.c"
 
         "apps/system/system_app.c"
         "apps/system/pages/page_system.c"

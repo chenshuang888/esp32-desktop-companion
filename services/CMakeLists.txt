@@ -7,6 +7,7 @@ idf_component_register(
         "manager/notify_manager.c"
         "notify_service.c"
         "manager/media_manager.c"
+        "manager/playlist_manager.c"
         "media_service.c"
         "manager/system_manager.c"
         "system_service.c"

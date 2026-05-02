@@ -17,6 +17,7 @@
 #include "weather_manager.h"
 #include "notify_manager.h"
 #include "media_manager.h"
+#include "playlist_manager.h"
 #include "system_manager.h"
 #include "persist.h"
 #include "backlight_storage.h"
@@ -77,6 +78,9 @@ void app_main(void)
 
     // 初始化媒体管理器（同上；BLE 回调会 push 到它）
     ESP_ERROR_CHECK(media_manager_init());
+
+    // 初始化歌单管理器（PC 流式推歌单）
+    ESP_ERROR_CHECK(playlist_manager_init());
 
     // 初始化系统监控管理器（PC 推 CPU/MEM/DISK/BAT/NET/Temp）
     ESP_ERROR_CHECK(system_manager_init());
