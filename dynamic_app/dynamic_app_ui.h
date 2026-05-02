@@ -98,6 +98,7 @@ typedef enum {
     DYNAMIC_APP_STYLE_FLEX_ALIGN,      /* a/b/c = main/cross/track 的 align id（0..5） */
     DYNAMIC_APP_STYLE_BORDER,          /* a=color, b=width(px), c=side bitmap, d=opa(0..255) */
     DYNAMIC_APP_STYLE_PRESSED_BG,      /* 按下态背景色：a=0xRRGGBB，b=opa（0..255） */
+    DYNAMIC_APP_STYLE_HIDDEN,          /* a = 0(显示) / 1(隐藏) —— LV_OBJ_FLAG_HIDDEN */
 } dynamic_app_style_key_t;
 
 typedef struct {

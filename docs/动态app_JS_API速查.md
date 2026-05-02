@@ -35,6 +35,11 @@ UI                           // iOS 浅色风格高阶组件库（见 §11）
   ├─ toast(text, durMs)        // 屏底浮一条
   ├─ fadeIn(id, delayMs)       // 淡入动画
   └─ swipeExit(children, fn)   // 给 children 末尾加一个 hitZone
+Router                       // 多级页面栈（见 §12，可选）
+  ├─ define(name, builder)     // 注册页构造器
+  ├─ start / push / replace
+  ├─ pop / popTo / current / depth
+  └─ onEnter(name, fn) / onLeave(name, fn)
 
 // ── 固件原生（每个 app 都有） ──
 sys
@@ -121,6 +126,7 @@ VDOM.render(buildTreeFromState(state), null);
 | `font` | `'text'` / `'title'` / `'huge'` | |
 | `shadow` | `[color, width, ofsY]` | `[0x000000, 12, 4]` |
 | `scrollable` | bool | panel 是否可滚 |
+| `hidden` | bool | true 隐藏（占位保留，下次 false 即恢复） |
 | `onClick` / `onPress` / `onDrag` / `onRelease` / `onLongPress` | fn(ev) | 见 §1.5 |
 
 ### 1.4 align 模式
@@ -523,3 +529,88 @@ sys.log('hello: ready');
 ```
 
 **视觉与原生 app 几乎一致**，业务逻辑仍然短小。
+
+
+---
+
+## 12. Router —— 多级页面栈（push/pop 路由）
+
+> prelude 暴露 `Router` 命名空间，**纯 JS 层**实现的页栈。每页独立 mount/destroy，
+> 切页时旧页 hidden，回退时直接显示，不会丢滚动位置 / canvas 内容 / setInterval。
+>
+> 不强制使用 —— 单页 app 完全可以照常用 `VDOM.mount`。**只有"列表→详情"这种
+> 多级流才用 Router**，避免把单页 app 也用上 Router 反而绕。
+
+### 12.1 心智模型
+
+```
+Router.define(name, builder)        builder(props) → vnode (panel 类型)
+Router.start(name, props?)          调一次。第一次 mount + attachRootListener
+Router.push(name, props?)            入栈（栈深 +1，最大 4）
+Router.replace(name, props?)         替换栈顶（栈深不变）
+Router.pop()                         出栈
+Router.popTo(name)                   出栈到指定 name 为栈顶
+Router.current()                     → { name, props, depth }
+Router.depth()                       → 栈深整数
+Router.onEnter(name, fn(props))       生命周期：每次进入触发（push / pop 回退都触发）
+Router.onLeave(name, fn())            离开时触发（push 走 / pop 走 / replace 替换）
+```
+
+### 12.2 最小例子
+
+```js
+function buildList() {
+    return h("panel", { bg: UI.T.C_BG, flex: "col" }, [
+        UI.statusBar({ title: "列表" }),
+        UI.card({ pad: [0,0,0,0] }, [
+            UI.listRow({ icon: sys.icons.INFO, label: "条目 A",
+                onClick: function () { Router.push("detail", { id: "A" }); } }),
+            UI.listRow({ icon: sys.icons.INFO, label: "条目 B",
+                onClick: function () { Router.push("detail", { id: "B" }); } })
+        ])
+    ]);
+}
+
+function buildDetail(props) {
+    return h("panel", { bg: UI.T.C_BG, flex: "col" }, [
+        h("panel", { size: [-100, 36], bg: UI.T.C_PANEL, flex: "row",
+                     pad: [4,2,12,2], gap: [0,8] }, [
+            h("button", { size: [40,28], bg: UI.T.C_PANEL, scrollable: false,
+                          pressedBg: { color: UI.T.C_PANEL_HI, opa: 255 },
+                          onClick: function () { Router.pop(); } }, [
+                h("label", { text: sys.icons.CHEVRON_LEFT, font: "icon24",
+                             fg: UI.T.C_ACCENT, align: ["c",0,0] })
+            ]),
+            h("label", { text: "详情：" + (props.id || "?"),
+                         fg: UI.T.C_TEXT, font: "title" })
+        ])
+    ]);
+}
+
+Router.define("list",   buildList);
+Router.define("detail", buildDetail);
+Router.start("list");
+```
+
+### 12.3 约束 & 默认行为
+
+- **每页根 vnode 必须是 `panel`**；Router 强制塞 `id`、`size: [-100,-100]`、`pad: [0,0,0,0]`
+- 业务想纵向布局子节点要自己设 `flex: "col"`（Router 不接管 flex）
+- **栈深 ≥ 2 时屏底上滑 = pop**；栈深 = 1 时上滑穿透到宿主层 = 退出 app
+- **栈深上限 4**：超过 push 时 `sys.log` warn + 忽略
+- **同名页递归 push 自动加 id 后缀**（`detail` 第二次 push 时变 `detail__r2`）
+- `pop` 时旧页**真正销毁**（VDOM.destroy）；保留下层栈所有页（含其滚动位置 / canvas）
+- Router **不接管 setInterval / ble.on**：业务在 `onLeave` 里自己 `clearInterval`
+
+### 12.4 何时不用 Router
+
+- 单页 app（gomoku / doodle / notif）—— 直接 VDOM.mount 简单
+- 用 modal 已经能满足"二级页"语义（doodle 画廊 / gomoku 认输确认）
+- 双页平铺切换（音乐/系统圆盘那种 tab 滑动）—— 用 hidden 自己切，不需要栈语义
+
+### 12.5 hidden vs Router.pop 怎么选
+
+- 想保留页内**所有状态**且**可能多次切换**（侧边抽屉 / tab 内切换）→ 自己用 `VDOM.set(id, { hidden: true })`
+- 想要**返回栈语义**（pop 回上一级 / popTo 回首页）→ 用 Router
+
+

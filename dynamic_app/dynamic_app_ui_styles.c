@@ -270,6 +270,12 @@ void apply_style(lv_obj_t *obj, const dynamic_app_ui_command_t *cmd)
             break;
         }
 
+        case DYNAMIC_APP_STYLE_HIDDEN: {
+            if (a) lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+            else   lv_obj_clear_flag(obj, LV_OBJ_FLAG_HIDDEN);
+            break;
+        }
+
         default:
             ESP_LOGW(TAG, "unknown style key %d", (int)cmd->u.style.key);
             break;

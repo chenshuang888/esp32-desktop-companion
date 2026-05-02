@@ -1414,6 +1414,7 @@ esp_err_t dynamic_app_natives_bind(JSContext *ctx)
     (void)JS_SetPropertyStr(ctx, style, "FLEX_ALIGN",    JS_NewInt32(ctx, DYNAMIC_APP_STYLE_FLEX_ALIGN));
     (void)JS_SetPropertyStr(ctx, style, "BORDER",        JS_NewInt32(ctx, DYNAMIC_APP_STYLE_BORDER));
     (void)JS_SetPropertyStr(ctx, style, "PRESSED_BG",    JS_NewInt32(ctx, DYNAMIC_APP_STYLE_PRESSED_BG));
+    (void)JS_SetPropertyStr(ctx, style, "HIDDEN",        JS_NewInt32(ctx, DYNAMIC_APP_STYLE_HIDDEN));
 
     /* sys.align.* —— 必须与 styles.c 的 k_align_map[] 索引一致 */
     (void)JS_SetPropertyStr(ctx, align, "TOP_LEFT",     JS_NewInt32(ctx, 0));

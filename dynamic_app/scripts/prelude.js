@@ -100,6 +100,8 @@ var VDOM = (function () {
             sys.ui.setStyle(id, sys.style.OPA, props.opa | 0, 0, 0, 0);
         if (props.bgOpa !== undefined)
             sys.ui.setStyle(id, sys.style.BG_OPA, props.bgOpa | 0, 0, 0, 0);
+        if (props.hidden !== undefined)
+            sys.ui.setStyle(id, sys.style.HIDDEN, props.hidden ? 1 : 0, 0, 0, 0);
         if (props.grow !== undefined)
             sys.ui.setStyle(id, sys.style.FLEX_GROW, props.grow | 0, 0, 0, 0);
         if (props.textAlign !== undefined) {
@@ -272,7 +274,7 @@ var VDOM = (function () {
                       'pad', 'borderBottom', 'flex', 'font',
                       'shadow', 'gap', 'scrollable',
                       'opa', 'bgOpa', 'grow', 'textAlign', 'longMode',
-                      'rotate', 'flexAlign', 'border', 'pressedBg'];
+                      'rotate', 'flexAlign', 'border', 'pressedBg', 'hidden'];
 
     function shallowEq(a, b) {
         if (a === b) return true;
@@ -715,5 +717,233 @@ var UI = (function () {
         divider: divider, hitZone: hitZone,
         modal: modal, toast: toast, fadeIn: fadeIn,
         swipeExit: swipeExit
+    };
+})();
+
+// ============================================================================
+// Router —— 多级页面栈（纯 JS 层，零 native）
+//
+// 心智模型：
+//   每个页是一个 fn(props) → vnode 的"页构造器"。Router 维护一个页栈，
+//   栈顶页 visible，下层全部 hidden。push/pop 改 hidden flag 切换显示。
+//   滚动位置 / canvas 内容 / setInterval 都不会丢（不 destroy DOM）。
+//
+// API：
+//   Router.define(name, builder)     注册页构造器；builder = fn(props) → vnode
+//   Router.start(name, props?)        启动；调用一次。第一次 push + attachRootListener
+//   Router.push(name, props?)         入栈（栈深 +1）；同名页递归 push 自动加后缀
+//   Router.replace(name, props?)      替换栈顶（栈深不变）
+//   Router.pop()                      出栈；栈深 1 时 = 上滑退出 app
+//   Router.popTo(name)                出栈到指定 name；找不到 = sys.log warn
+//   Router.current()                  → { name, props, depth }
+//   Router.depth()                    → 栈深整数
+//   Router.onEnter(name, fn)           可选生命周期：每次进入该页（push/pop 回退）触发
+//   Router.onLeave(name, fn)           离开时触发（push 走 / pop 走 / replace 替换）
+//
+// 约束：
+//   - builder 返回的 vnode 必须是 panel 类型（Router 把它当 page 容器）
+//   - Router 自己往 vnode props 强制塞 size: [-100,-100] + 自动 id
+//   - 不和 UI.modal / UI.toast 冲突（modal 走 sys.ui.modal，z-order 在所有 page 之上）
+//   - 不接管 setInterval / ble.on，业务在 onLeave 里自行 clearInterval
+// ============================================================================
+
+var Router = (function () {
+    var MAX_DEPTH = 4;
+
+    var defs       = {};   // name → builder fn
+    var enterCbs   = {};   // name → fn(props)
+    var leaveCbs   = {};   // name → fn()
+    var stack      = [];   // [{ name, slot, props }]，slot = 实际挂载用的 vnode id
+    var counters   = {};   // name → 累计 push 次数（用于 id 唯一）
+    var mounted    = {};   // slot id → true，避免重复 mount
+    var started    = false;
+
+    function autoSlot(name) {
+        counters[name] = (counters[name] || 0) + 1;
+        return name + '__r' + counters[name];
+    }
+
+    function mountPage(name, props, slot) {
+        var builder = defs[name];
+        if (!builder) {
+            sys.log('Router: page not defined: ' + name);
+            return false;
+        }
+        var node;
+        try { node = builder(props || {}); }
+        catch (eb) {
+            sys.log('Router: builder(' + name + ') throw: ' + eb);
+            return false;
+        }
+        if (!node || node.type !== 'panel') {
+            sys.log('Router: builder(' + name + ') must return a panel vnode');
+            return false;
+        }
+        // 强制 page 容器属性：撑满、覆盖整个可用区
+        node.props.id = slot;
+        node.props.size = [-100, -100];
+        if (node.props.scrollable === undefined) node.props.scrollable = false;
+        if (node.props.pad === undefined) node.props.pad = [0, 0, 0, 0];
+        VDOM.mount(node, null);
+        mounted[slot] = true;
+        return true;
+    }
+
+    function setVisible(slot, visible) {
+        if (mounted[slot]) {
+            VDOM.set(slot, { hidden: !visible });
+        }
+    }
+
+    function fireLeave(name) {
+        var fn = leaveCbs[name];
+        if (typeof fn === 'function') {
+            try { fn(); } catch (eL) { sys.log('Router.onLeave(' + name + '): ' + eL); }
+        }
+    }
+
+    function fireEnter(name, props) {
+        var fn = enterCbs[name];
+        if (typeof fn === 'function') {
+            try { fn(props || {}); } catch (eE) { sys.log('Router.onEnter(' + name + '): ' + eE); }
+        }
+    }
+
+    // 每个页栈 ≥2 时屏底上滑 = pop；=1 时让宿主层退出 app（不拦截）
+    var swipeAccDy = 0;
+    function ensureSwipeZone() {
+        if (mounted['_routerSwipe']) return;
+        var zone = h('panel', {
+            id: '_routerSwipe',
+            size: [-100, 30],
+            align: ['bm', 0, 0],
+            bg: 0x000000, bgOpa: 0,
+            scrollable: false,
+            onPress:   function () { swipeAccDy = 0; },
+            onDrag:    function (e) { swipeAccDy += (e.dy | 0); },
+            onRelease: function () {
+                var up = -swipeAccDy;
+                swipeAccDy = 0;
+                if (up >= 30 && stack.length >= 2) {
+                    pop();
+                }
+                /* 栈深 = 1 时不响应：事件穿透到宿主层 hit zone 退出 app */
+            }
+        });
+        VDOM.mount(zone, null);
+        mounted['_routerSwipe'] = true;
+    }
+
+    function start(name, props) {
+        if (started) {
+            sys.log('Router: already started');
+            return;
+        }
+        started = true;
+        var slot = autoSlot(name);
+        if (!mountPage(name, props, slot)) { started = false; return; }
+        stack.push({ name: name, slot: slot, props: props || {} });
+        ensureSwipeZone();
+        sys.ui.attachRootListener(slot);
+        fireEnter(name, props);
+    }
+
+    function push(name, props) {
+        if (!started) { sys.log('Router.push before start'); return; }
+        if (stack.length >= MAX_DEPTH) {
+            sys.log('Router: max depth ' + MAX_DEPTH + ' reached');
+            return;
+        }
+        var top = stack[stack.length - 1];
+        // 旧栈顶隐藏 + 触发 onLeave
+        setVisible(top.slot, false);
+        fireLeave(top.name);
+        // 新页 mount + 显示
+        var slot = autoSlot(name);
+        if (!mountPage(name, props, slot)) {
+            setVisible(top.slot, true);   // 回滚
+            return;
+        }
+        stack.push({ name: name, slot: slot, props: props || {} });
+        // 新页一定在栈顶，可见
+        setVisible(slot, true);
+        // 新页也要 attachRootListener，否则页内按钮事件无法分发
+        sys.ui.attachRootListener(slot);
+        fireEnter(name, props);
+    }
+
+    function pop() {
+        if (!started) { sys.log('Router.pop before start'); return; }
+        if (stack.length <= 1) {
+            sys.log('Router.pop: at root');
+            return;
+        }
+        var leaving = stack.pop();
+        fireLeave(leaving.name);
+        setVisible(leaving.slot, false);
+        // 销毁该页（pop 后没必要保留）
+        VDOM.destroy(leaving.slot);
+        delete mounted[leaving.slot];
+        var top = stack[stack.length - 1];
+        setVisible(top.slot, true);
+        fireEnter(top.name, top.props);
+    }
+
+    function replace(name, props) {
+        if (!started) { sys.log('Router.replace before start'); return; }
+        if (stack.length === 0) {
+            start(name, props); return;
+        }
+        var leaving = stack.pop();
+        fireLeave(leaving.name);
+        VDOM.destroy(leaving.slot);
+        delete mounted[leaving.slot];
+        var slot = autoSlot(name);
+        if (!mountPage(name, props, slot)) {
+            sys.log('Router.replace: mount failed, stack now empty-ish');
+            return;
+        }
+        stack.push({ name: name, slot: slot, props: props || {} });
+        setVisible(slot, true);
+        sys.ui.attachRootListener(slot);
+        fireEnter(name, props);
+    }
+
+    function popTo(name) {
+        if (!started) { sys.log('Router.popTo before start'); return; }
+        var idx = -1;
+        for (var i = stack.length - 1; i >= 0; i--) {
+            if (stack[i].name === name) { idx = i; break; }
+        }
+        if (idx < 0) { sys.log('Router.popTo: ' + name + ' not in stack'); return; }
+        if (idx === stack.length - 1) return;
+        // 逐个 pop 直到栈顶就是 name
+        while (stack.length - 1 > idx) {
+            pop();
+        }
+    }
+
+    function current() {
+        if (stack.length === 0) return null;
+        var top = stack[stack.length - 1];
+        return { name: top.name, props: top.props, depth: stack.length };
+    }
+
+    function depth() { return stack.length; }
+
+    function onEnter(name, fn) { enterCbs[name] = fn; }
+    function onLeave(name, fn) { leaveCbs[name] = fn; }
+
+    return {
+        define: function (n, b) { defs[n] = b; },
+        start:   start,
+        push:    push,
+        replace: replace,
+        pop:     pop,
+        popTo:   popTo,
+        current: current,
+        depth:   depth,
+        onEnter: onEnter,
+        onLeave: onLeave
     };
 })();
