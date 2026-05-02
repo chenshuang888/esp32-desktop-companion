@@ -198,6 +198,17 @@ void dynapp_bridge_clear_inbox(void)
     xQueueReset(s_inbox);
 }
 
+bool dynapp_bridge_push_inbox(const uint8_t *data, uint16_t len)
+{
+    if (!s_inbox || !data || len == 0 || len > DYNAPP_BRIDGE_MAX_PAYLOAD) {
+        return false;
+    }
+    dynapp_bridge_msg_t msg;
+    msg.len = len;
+    memcpy(msg.data, data, len);
+    return xQueueSend(s_inbox, &msg, 0) == pdTRUE;
+}
+
 bool dynapp_bridge_send(const uint8_t *data, size_t len)
 {
     if (!data || len == 0 || len > DYNAPP_BRIDGE_MAX_PAYLOAD) return false;

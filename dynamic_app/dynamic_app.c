@@ -45,6 +45,7 @@
 #include "freertos/task.h"
 
 #include "dynapp_bridge_service.h"
+#include "dynapp_mailbox.h"
 
 static const char *TAG = "dynamic_app";
 
@@ -115,6 +116,11 @@ static void script_task(void *arg)
         memset(s_rt.intervals, 0, sizeof(s_rt.intervals));
         /* 上一个 app 没消费完的 PC 消息也清掉，避免串台 */
         dynapp_bridge_clear_inbox();
+        /* 通知 mailbox 让位（停止从 inbox 抢消息），然后把这个 app 离线期间
+         * 攒在 NVS 的消息回灌进 inbox。replay 完 inbox 里就有"待 JS 注册 onRecv
+         * 后第一轮 drain 消化"的历史消息。 */
+        dynapp_mailbox_set_js_active(true);
+        dynapp_mailbox_replay(dynamic_app_registry_current());
         s_rt.app_running = true;
 
         /* ——— 三步走：setup → bind → eval ——— */
@@ -122,18 +128,21 @@ static void script_task(void *arg)
             ESP_LOGE(TAG, "runtime setup failed");
             dynamic_app_runtime_teardown();
             s_rt.app_running = false;
+            dynapp_mailbox_set_js_active(false);
             continue;
         }
         if (dynamic_app_runtime_bind_globals(s_rt.ctx) != ESP_OK) {
             ESP_LOGE(TAG, "bind globals failed");
             dynamic_app_runtime_teardown();
             s_rt.app_running = false;
+            dynapp_mailbox_set_js_active(false);
             continue;
         }
         if (dynamic_app_runtime_eval_app(s_rt.ctx) != ESP_OK) {
             ESP_LOGE(TAG, "eval app failed: %s", dynamic_app_registry_current());
             dynamic_app_runtime_teardown();
             s_rt.app_running = false;
+            dynapp_mailbox_set_js_active(false);
             continue;
         }
 
@@ -169,6 +178,8 @@ static void script_task(void *arg)
         ESP_LOGI(TAG, "stopping dynamic app");
         dynamic_app_runtime_teardown();
         s_rt.app_running = false;
+        /* 重新让 mailbox 接管 inbox：app 退出后 PC 推来的消息会被归档到 NVS */
+        dynapp_mailbox_set_js_active(false);
     }
 }
 

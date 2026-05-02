@@ -16,6 +16,7 @@ idf_component_register(
         "dynapp_bridge_service.c"
         "dynapp_upload_service.c"
         "manager/dynapp_upload_manager.c"
+        "manager/dynapp_mailbox.c"
     INCLUDE_DIRS
         "."
         "manager"

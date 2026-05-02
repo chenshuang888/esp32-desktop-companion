@@ -26,7 +26,7 @@
 // 详情：点列表项 → UI.modal({ title, body, action0:'删除', action1:'关闭' })
 // ============================================================================
 
-var APP_NAME = "notif";
+var APP_NAME = "notif_pkg";
 var ble = makeBle(APP_NAME);
 
 var T = UI.T;
@@ -96,6 +96,7 @@ function formatFull(ts) {
 // --- BLE 接收 -------------------------------------------------------------
 ble.on("add", function (msg) {
     var b = msg.body || {};
+    sys.log("notif: ble.add fired title=" + (b.title || '') + " items=" + state.items.length);
     if (!b.title && !b.body) return;
     var item = {
         title: ('' + (b.title || '')).slice(0, 31),

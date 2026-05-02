@@ -47,7 +47,8 @@
       "WebFetch(domain:developer.spotify.com)",
       "WebFetch(domain:pypi.org)",
       "Bash(grep -rn \"media: \\\\[PAUSE\\\\]\\\\|\\\\\\\\[PAUSE\\\\\\\\]\" C:/Users/ChenShuang/Desktop/esp32/demo6/services/)",
-      "Bash(2>&1)"
+      "Bash(2>&1)",
+      "Bash(grep -v \"//\")"
     ]
   }
 }

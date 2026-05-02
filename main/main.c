@@ -13,6 +13,7 @@
 #include "dynapp_upload_service.h"
 #include "dynapp_script_store.h"
 #include "dynapp_fs_worker.h"
+#include "dynapp_mailbox.h"
 #include "time_manager.h"
 #include "weather_manager.h"
 #include "notify_manager.h"
@@ -99,6 +100,10 @@ void app_main(void)
     ESP_ERROR_CHECK(dynapp_bridge_service_init());
     ESP_ERROR_CHECK(dynapp_upload_service_init());
     ESP_ERROR_CHECK(ble_driver_nimble_start());
+
+    // 动态 app 离线消息兜底：JS task 不在跑时把 BLE 消息归档到 NVS，启动时回灌
+    // 必须在 dynapp_bridge_service_init 之后（用 inbox 接口）
+    ESP_ERROR_CHECK(dynapp_mailbox_init());
 
     // 再初始化应用
     ESP_ERROR_CHECK(app_main_init());

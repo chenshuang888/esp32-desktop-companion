@@ -62,6 +62,11 @@ bool dynapp_bridge_pop_inbox(dynapp_bridge_msg_t *out);
 /* 清空 inbox（app 切换时用，避免上个 app 漏的消息发给下个 app） */
 void dynapp_bridge_clear_inbox(void);
 
+/* 主动 push 一条消息到 inbox（mailbox replay 用，把 NVS 归档的消息回灌）。
+ * len 必须 ≤ DYNAPP_BRIDGE_MAX_PAYLOAD。返回 false 表示 inbox 满 / 参数错。
+ * 不像 access_cb 那样满时丢老的——回灌是同步操作，调用方自己决定怎么处理失败。 */
+bool dynapp_bridge_push_inbox(const uint8_t *data, uint16_t len);
+
 /* ---- script_task 一侧的发送接口 ---- */
 
 /* 把 payload 推给 PC。要求当前已有 central 连接 + PC 已订阅 tx char。

@@ -17,6 +17,7 @@ from typing import Any, Optional
 from ..constants import BRIDGE_MAX_PAYLOAD, BRIDGE_RX_UUID, BRIDGE_TX_UUID
 from ..shared.geoip_weather import get_weather
 from ..shared.smtc import MediaState, SmtcMonitor, send_media_key
+from ..shared.win_notifications import WinNotificationMonitor
 from .base import Provider, ProviderContext
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ class BridgeProvider(Provider):
         self._router = Router()
         self._ctx: Optional[ProviderContext] = None
         self._smtc: SmtcMonitor | None = None
+        self._winnotif: WinNotificationMonitor | None = None
 
     def subscriptions(self) -> list[str]:
         return [BRIDGE_TX_UUID]
@@ -68,6 +70,25 @@ class BridgeProvider(Provider):
             except Exception as e:
                 ctx.bus.emit("log", ("warn", self.name, f"smtc: {e}"))
 
+            # Windows 通知 → notif/add（增量推送，不拉历史）
+            async def _on_notif(item: dict) -> None:
+                ctx.bus.emit("log", ("info", self.name,
+                    f"notif/add app={item.get('app')!r} title={item.get('title')!r}"))
+                ok = await self.send("notif_pkg", "add", body={
+                    "title": (item.get("title") or "")[:31],
+                    "body":  (item.get("body")  or "")[:95],
+                    "ts":    int(item.get("ts") or _time.time()),
+                    "cat":   item.get("cat") or "msg",
+                })
+                if not ok:
+                    ctx.bus.emit("log", ("warn", self.name,
+                        "notif/add send failed (not connected?)"))
+            self._winnotif = WinNotificationMonitor(_on_notif, loop)
+            try:
+                await self._winnotif.start()
+            except Exception as e:
+                ctx.bus.emit("log", ("warn", self.name, f"winnotif: {e}"))
+
     async def on_stop(self, ctx: ProviderContext) -> None:
         for u in self._unsubs:
             try: u()
@@ -77,6 +98,10 @@ class BridgeProvider(Provider):
             try: await self._smtc.stop()
             except Exception: pass
             self._smtc = None
+        if self._winnotif is not None:
+            try: await self._winnotif.stop()
+            except Exception: pass
+            self._winnotif = None
         self._ctx = None
 
     # ------------------------------------------------------------------
