@@ -15,8 +15,8 @@ import logging
 from ...constants import (
     NOTIFY_CAT_GENERIC, NOTIFY_CHAR_UUID,
 )
-from ...shared.packers import pack_notify
-from ...shared.toast import ToastWatcher
+from ...platform.packers import pack_notify
+from ...platform.toast import ToastWatcher
 from ..base import Provider, ProviderContext
 
 logger = logging.getLogger(__name__)

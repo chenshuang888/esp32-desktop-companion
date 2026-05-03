@@ -30,11 +30,11 @@ from ...constants import (
     MEDIA_PERIODIC_RESYNC_S, MEDIA_PLAYLIST_MAX_ITEMS,
     MEDIA_PLAYLIST_PUSH_GAP_S, MEDIA_PLAY_TRACK_STRUCT,
 )
-from ...shared.packers import (
+from ...platform.packers import (
     EMPTY_MEDIA_PAYLOAD, pack_media,
     pack_playlist_begin, pack_playlist_item, pack_playlist_end,
 )
-from ...shared.smtc import MediaState, SmtcMonitor, send_media_key
+from ...platform.smtc import MediaState, SmtcMonitor, send_media_key
 from ..base import Provider, ProviderContext
 
 logger = logging.getLogger(__name__)

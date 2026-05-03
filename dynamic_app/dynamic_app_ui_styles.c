@@ -50,12 +50,16 @@ static const lv_align_t k_align_map[] = {
  * ========================================================================= */
 
 /* SIZE 字段编码：
- *   v >= 0 : 像素
- *   v <  0 : lv_pct(-v)，例如 -100 表示 100%
+ *   v >= 0     : 像素
+ *   -100..-1   : lv_pct(-v)，例如 -100 表示 100%
+ *   -32768     : LV_SIZE_CONTENT（按内容自适应）—— 远离百分比合法区间的 sentinel
+ *
+ *   sentinel 在 prelude.js 暴露为 sys.size.CONTENT。脚本侧用名字而不是裸魔法值。
  */
 static lv_coord_t resolve_size(int32_t v)
 {
-    if (v < 0) return lv_pct(-v);
+    if (v == -32768) return LV_SIZE_CONTENT;
+    if (v < 0)       return lv_pct(-v);
     return (lv_coord_t)v;
 }
 

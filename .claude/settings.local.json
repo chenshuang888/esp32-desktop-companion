@@ -50,7 +50,8 @@
       "Bash(2>&1)",
       "Bash(grep -v \"//\")",
       "Bash(grep -n \"C_BG_DEEP\\\\|C_PANEL_HI\\\\|C_TEXT_DIM\\\\|C_TEXT_MUTED\\\\|R_MD\\\\|R_LG\\\\|setTimeout\\\\|MENU\\\\|I\\\\\\\\.OK\\\\|C_OK\\\\b\" C:/Users/ChenShuang/Desktop/esp32/demo6/dynamic_app/scripts/prelude.js)",
-      "Bash(grep -n \"ensure_data_dir\\\\|build_user_data_path\\\\|build_app_file\\\\|data\\\\\\\\\\\\\\\\\\\\|DYNAPP_DATA_SUBDIR\" C:/Users/ChenShuang/Desktop/esp32/demo6/storage/littlefs/dynapp_script_store.c)"
+      "Bash(grep -n \"ensure_data_dir\\\\|build_user_data_path\\\\|build_app_file\\\\|data\\\\\\\\\\\\\\\\\\\\|DYNAPP_DATA_SUBDIR\" C:/Users/ChenShuang/Desktop/esp32/demo6/storage/littlefs/dynapp_script_store.c)",
+      "Bash(xargs wc *)"
     ]
   }
 }

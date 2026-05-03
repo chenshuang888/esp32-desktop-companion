@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 
 from ...constants import CTS_CHAR_UUID
-from ...shared.packers import pack_cts
+from ...platform.packers import pack_cts
 from ..base import Provider, ProviderContext
 
 logger = logging.getLogger(__name__)

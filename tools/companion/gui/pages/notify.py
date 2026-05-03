@@ -1,5 +1,10 @@
 """Notify 页：手动通知输入 → notify_provider。
 
+定位：本页是**原生 NotifyProvider 的 PC 调试入口**（手动构造一条通知推到设备原生
+通知页）。它属于 `providers/native/` 这条线的配套 GUI，**不要**和 `plugins/notif/`
+混淆——后者是动态 app 端 notif_pkg 的代理（监听 Win 系统通知 → BLE 推送），
+两者目标和数据流都不同。
+
 通过 bus.emit("notify:manual", (title, body, category)) 触发。
 保留 ble_time_sync 独有的"手动推送"功能。
 """

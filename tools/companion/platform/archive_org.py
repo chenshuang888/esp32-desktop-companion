@@ -126,6 +126,16 @@ def resolve_mp3(hit: TrackHit) -> Optional[TrackHit]:
     return hit
 
 
+def search_with_mp3(keyword: str, limit: int = 15) -> list[TrackHit]:
+    """search() + 对每个 hit resolve_mp3，过滤掉无 mp3 的。GUI 用这一个就够了。"""
+    resolved: list[TrackHit] = []
+    for h in search(keyword, limit=limit):
+        r = resolve_mp3(h)
+        if r and r.file_name:
+            resolved.append(r)
+    return resolved
+
+
 # ---------------------------------------------------------------------------
 # 下载
 # ---------------------------------------------------------------------------

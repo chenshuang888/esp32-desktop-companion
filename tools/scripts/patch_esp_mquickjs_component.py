@@ -18,7 +18,7 @@
 **使用**
 在 `idf.py reconfigure` 成功下载/更新依赖后运行一次：
 
-  python tools/patch_esp_mquickjs_component.py
+  python tools/scripts/patch_esp_mquickjs_component.py
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from __future__ import annotations
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 COMP_DIR = ROOT / "managed_components" / "makgordon__esp-mquickjs"
 
 

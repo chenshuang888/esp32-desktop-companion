@@ -16,7 +16,7 @@ from ...constants import (
     SYSTEM_BATTERY_ABSENT, SYSTEM_CHAR_UUID, SYSTEM_CHARGING_ABSENT,
     SYSTEM_CPU_TEMP_INVALID, SYSTEM_PUSH_INTERVAL_S, SYSTEM_REQ_CHAR_UUID,
 )
-from ...shared.packers import pack_system
+from ...platform.packers import pack_system
 from ..base import Provider, ProviderContext
 
 logger = logging.getLogger(__name__)

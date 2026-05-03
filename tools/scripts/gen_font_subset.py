@@ -9,7 +9,7 @@
     1) 把一个中文 TTF 原始文件放到 app/fonts/ 下（任意文件名，只要扩展名 .ttf）。
        必须是 TrueType (.ttf)，不能是 OpenType CFF (.otf)—— Tiny TTF 底层的
        stb_truetype 只支持 TrueType glyph outlines。
-    2) 运行: python tools/gen_font_subset.py
+    2) 运行: python tools/scripts/gen_font_subset.py
     3) 产物: app/fonts/srhs_sc_subset.ttf  (~1.2 - 1.5 MB)
        该文件由 app/CMakeLists.txt 的 EMBED_FILES 编入固件。
 
@@ -22,10 +22,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT     = Path(__file__).parent.parent.resolve()
+ROOT     = Path(__file__).resolve().parents[2]
 FONT_DIR = ROOT / "app" / "fonts"
 DST      = FONT_DIR / "srhs_sc_subset.ttf"
-CHARS_TXT = ROOT / "tools" / "_subset_chars.txt"
+CHARS_TXT = ROOT / "tools" / "scripts" / "_subset_chars.txt"
 
 
 def find_source_ttf() -> Path:

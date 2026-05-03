@@ -1,15 +1,15 @@
 """make_pack_manifest.py —— 为动态 app 包目录写 manifest.json
 
 用法：
-    python tools/make_pack_manifest.py <pack_dir> --id <id> --name <显示名>
+    python tools/scripts/make_pack_manifest.py <pack_dir> --id <id> --name <显示名>
                                                   [--icon NAME] [--color TOKEN]
                                                   [--version 1.0.0]
 
 示例：
-    python tools/make_pack_manifest.py dynamic_app/scripts/notif_pkg \
+    python tools/scripts/make_pack_manifest.py dynamic_app/scripts/notif_pkg \
         --id notif_pkg --name 通知 --icon NOTIFICATIONS --color ACCENT
 
-    python tools/make_pack_manifest.py dynamic_app/scripts/alarm_pkg \
+    python tools/scripts/make_pack_manifest.py dynamic_app/scripts/alarm_pkg \
         --id alarm_pkg --name 闹钟 --icon ALARM --color WARN
 
 输出：

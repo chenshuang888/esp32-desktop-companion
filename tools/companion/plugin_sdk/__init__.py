@@ -33,7 +33,7 @@ import asyncio
 import logging
 from typing import Any, Callable, Optional
 
-from .bus import EventBus
+from ..bus import EventBus
 
 
 class Plugin:

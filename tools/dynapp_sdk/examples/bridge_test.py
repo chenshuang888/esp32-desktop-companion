@@ -12,24 +12,24 @@ GATT:
     ESP → PC   { "from": <app>, "type": "msg", "body": "..." }
     "to": "*" 表示广播。
 
-用法:
+用法 (从仓库根目录运行):
     # 跟 echo app 互发 msg（自动包 JSON）
-    python dynapp_bridge_test.py --to echo
+    python tools/dynapp_sdk/examples/bridge_test.py --to echo
         > hello                  # 输入 "hello" + 回车
         # ESP 回: <echo> hello (echo)
 
     # 一次性发一条
-    python dynapp_bridge_test.py --to echo --once "hi"
+    python tools/dynapp_sdk/examples/bridge_test.py --to echo --once "hi"
 
     # 自定义 type (高级)
-    python dynapp_bridge_test.py --to echo --type ping --once ""
+    python tools/dynapp_sdk/examples/bridge_test.py --to echo --type ping --once ""
 
     # 裸字节模式（不包 JSON，给低层调试）
-    python dynapp_bridge_test.py --raw
+    python tools/dynapp_sdk/examples/bridge_test.py --raw
         > hello                  # 直接发 b"hello"
 
     # 指定 mac，跳过扫描
-    python dynapp_bridge_test.py --addr XX:XX:XX:XX:XX:XX --to echo
+    python tools/dynapp_sdk/examples/bridge_test.py --addr XX:XX:XX:XX:XX:XX --to echo
 """
 
 import argparse

@@ -1435,6 +1435,12 @@ esp_err_t dynamic_app_natives_bind(JSContext *ctx)
     (void)JS_SetPropertyStr(ctx, font, "ICON_36", JS_NewInt32(ctx, 4));
     (void)JS_SetPropertyStr(ctx, font, "NUM_M",   JS_NewInt32(ctx, 5));
 
+    /* sys.size.* —— size 字段的特殊 sentinel（数值与 styles.c::resolve_size 一致）
+     *   CONTENT (-32768) → LV_SIZE_CONTENT，按子内容自适应
+     *   普通像素直接传正整数；百分比传负整数（-1..-100）。 */
+    JSValue size_obj = JS_NewObject(ctx);
+    (void)JS_SetPropertyStr(ctx, size_obj, "CONTENT", JS_NewInt32(ctx, -32768));
+
     /* 装配 sys */
     BIND_FN(sys, "log", func_idx_sys_log);
     (void)JS_SetPropertyStr(ctx, sys, "ui",      ui);
@@ -1447,6 +1453,7 @@ esp_err_t dynamic_app_natives_bind(JSContext *ctx)
     (void)JS_SetPropertyStr(ctx, sys, "style",   style);
     (void)JS_SetPropertyStr(ctx, sys, "align",   align);
     (void)JS_SetPropertyStr(ctx, sys, "font",    font);
+    (void)JS_SetPropertyStr(ctx, sys, "size",    size_obj);
 
     /* sys.icons.* —— Material Symbols Rounded 字符（UTF-8）。
      * label 的 font 必须是 sys.font.ICON_24 / ICON_14 才能正确渲染。

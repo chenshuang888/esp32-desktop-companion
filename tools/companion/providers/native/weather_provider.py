@@ -9,8 +9,8 @@ import asyncio
 import logging
 
 from ...constants import WEATHER_CHAR_UUID, WEATHER_REQ_CHAR_UUID
-from ...shared.geoip_weather import get_weather
-from ...shared.packers import pack_weather
+from ...platform.geoip_weather import get_weather
+from ...platform.packers import pack_weather
 from ..base import Provider, ProviderContext
 
 logger = logging.getLogger(__name__)

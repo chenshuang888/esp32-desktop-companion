@@ -1,10 +1,6 @@
 """weather plugin —— 动态 app 调 ble.send('req') 取天气数据。
 
 通用服务（bind_app=None），任何动态 app 都可以发 from=weather/type=req 来请求。
-
-注意：本插件可以引用 companion.shared.geoip_weather，因为 shared/ 里的 geoip_weather
-本质是"封装好的免费 API 客户端"，不是 companion 内部细节。但为了示范"插件应自带依赖"
-的原则，未来这个 helper 可以从 shared/ 移到本目录下。当前阶段不做。
 """
 
 from __future__ import annotations
@@ -12,7 +8,9 @@ from __future__ import annotations
 import time
 
 from companion.plugin_sdk import Plugin
-from companion.shared.geoip_weather import get_weather
+from companion.plugin_sdk.platform import geoip_weather
+
+get_weather = geoip_weather.get_weather
 
 
 _WMO = {

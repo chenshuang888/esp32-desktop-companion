@@ -7,7 +7,7 @@
 
 流程:
     1) 把 MaterialSymbolsRounded.ttf 放到 app/fonts/
-    2) 运行: python tools/gen_icons_subset.py
+    2) 运行: python tools/scripts/gen_icons_subset.py
     3) 产物: app/fonts/material_icons_subset.ttf  (~15-25 KB)
        由 app/CMakeLists.txt 的 EMBED_FILES 编入固件
 
@@ -18,7 +18,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT     = Path(__file__).parent.parent.resolve()
+ROOT     = Path(__file__).resolve().parents[2]
 FONT_DIR = ROOT / "app" / "fonts"
 SRC      = FONT_DIR / "MaterialSymbolsRounded.ttf"
 DST      = FONT_DIR / "material_icons_subset.ttf"

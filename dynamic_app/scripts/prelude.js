@@ -476,6 +476,9 @@ var UI = (function () {
 
     var T = sys.tokens;
     var I = sys.icons;
+    /* SIZE_CONTENT：宽/高按子内容自适应（LV_SIZE_CONTENT 的 sentinel）。
+     * 数值与 dynamic_app_ui_styles.c::resolve_size 和 sys.size.CONTENT 一致。 */
+    var SIZE_CONTENT = (sys.size && sys.size.CONTENT !== undefined) ? sys.size.CONTENT : -32768;
 
     // ---- screen: 屏幕底容器（iOS 灰白底，全屏）-----------------------------
     function screen(id, children) {
@@ -498,6 +501,11 @@ var UI = (function () {
 
     // ---- card: 白底卡片 + 1px 浅描边 + 圆角 14 -----------------------------
     // opts.pad 默认 [12,12,12,12]；传 [0,0,0,0] 让里面的 listRow 自管 padding
+    // opts.size 默认 [-100, SIZE_CONTENT]（撑满父宽、按子内容自适应高度）。
+    // opts.flex 默认 'col'：iOS 卡片就是"垂直堆叠列表行/控件"，不开 column flex
+    // 多个子对象会全部堆在 (0,0) 重叠，只能看到最顶上那个。
+    // 不要不传 size —— 当父是 column flex 时，未设宽会让子的 lv_pct(100) 反向
+    // 拉成 0 宽，整张卡片被压成中央一小条（settings_pkg 曾因此 layout 错乱）。
     function card(opts, children) {
         var o = opts || {};
         var props = {
@@ -506,11 +514,11 @@ var UI = (function () {
             radius: T.R_LG,
             border: { color: T.C_BORDER, width: 1, side: 'full', opa: 128 },
             pad: o.pad === undefined ? [T.SP_MD, T.SP_MD, T.SP_MD, T.SP_MD] : o.pad,
-            scrollable: false
+            scrollable: false,
+            size: o.size === undefined ? [-100, SIZE_CONTENT] : o.size,
+            flex: o.flex === undefined ? 'col' : o.flex
         };
-        if (o.size !== undefined)      props.size      = o.size;
         if (o.align !== undefined)     props.align     = o.align;
-        if (o.flex !== undefined)      props.flex      = o.flex;
         if (o.gap !== undefined)       props.gap       = o.gap;
         if (o.flexAlign !== undefined) props.flexAlign = o.flexAlign;
         return h('panel', props, children || []);
@@ -710,6 +718,7 @@ var UI = (function () {
 
     return {
         T: T, I: I,
+        SIZE_CONTENT: SIZE_CONTENT,
         screen: screen, title: title, card: card,
         kvRow: kvRow, listRow: listRow,
         iconBtn: iconBtn, pillBtn: pillBtn,

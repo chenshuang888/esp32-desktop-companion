@@ -1,18 +1,15 @@
 """Music 页：本地音乐文件夹管理 + 一键同步到手表。
 
-功能：
-  - 显示当前 music_folder 路径，可改
-  - 添加文件（弹文件选择器，支持多选 mp3/flac/wav/ogg/m4a）
-  - 在线下载：从 archive.org（CC0/公共领域）搜索并下载免费音乐
-  - 列表展示当前文件夹的音乐文件，每行带"删除"
-  - "推送同步"按钮 → emit("media:rescan", {future}) 让 MediaProvider 重新扫描+流式推送
-  - 文件夹不存在时自动创建
+UI 层（只管渲染和事件桥接）。所有非 UI 逻辑下沉到：
+  - companion.platform.music_library  本地文件夹扫/加/删/解析
+  - companion.platform.archive_org    在线搜索/下载
+
+线程模型：搜索 / 下载用 threading 跑后台，结果通过 self.after() 回主线程。
 """
 
 from __future__ import annotations
 
 import os
-import shutil
 import threading
 from concurrent.futures import Future as ConcFuture
 from pathlib import Path
@@ -25,10 +22,7 @@ from ..theme import (
     COLOR_TEXT, COLOR_WARN,
 )
 from ..widgets import Card
-from ...shared import archive_org
-
-SUPPORTED_EXTS = {".mp3", ".flac", ".wav", ".ogg", ".m4a"}
-MAX_TRACKS = 50
+from ...platform import archive_org, music_library
 
 
 class MusicPage(ctk.CTkFrame):
@@ -101,32 +95,18 @@ class MusicPage(ctk.CTkFrame):
         self._scroll.grid_columnconfigure(0, weight=1)
 
     # ------------------------------------------------------------------
-    # folder helpers
+    # folder helpers（cfg 读写 + 调 platform 层）
     # ------------------------------------------------------------------
 
     def _folder_path(self) -> Path:
         p = self._cfg.get("music_folder")
         if not p:
-            p = str(Path(os.path.expanduser("~")) / "Music" / "Watch")
+            p = str(music_library.default_folder())
             self._cfg["music_folder"] = p
         return Path(p)
 
     def _folder_str(self) -> str:
         return str(self._folder_path())
-
-    def _ensure_folder(self) -> Path:
-        p = self._folder_path()
-        p.mkdir(parents=True, exist_ok=True)
-        return p
-
-    def _scan(self) -> list[Path]:
-        try:
-            p = self._ensure_folder()
-        except Exception:
-            return []
-        return sorted([f for f in p.iterdir()
-                        if f.is_file() and f.suffix.lower() in SUPPORTED_EXTS],
-                       key=lambda x: x.name.lower())
 
     # ------------------------------------------------------------------
     # actions
@@ -143,7 +123,7 @@ class MusicPage(ctk.CTkFrame):
 
     def _open_folder(self) -> None:
         try:
-            self._ensure_folder()
+            music_library.ensure_folder(self._folder_path())
             os.startfile(self._folder_str())
         except Exception as e:
             self._info_lbl.configure(text=f"打开失败: {e}", text_color=COLOR_ERR)
@@ -154,23 +134,12 @@ class MusicPage(ctk.CTkFrame):
             filetypes=[("Audio", "*.mp3 *.flac *.wav *.ogg *.m4a"), ("All", "*.*")])
         if not paths:
             return
-        dst = self._ensure_folder()
-        ok, skipped = 0, 0
-        for src_str in paths:
-            src = Path(src_str)
-            if src.suffix.lower() not in SUPPORTED_EXTS:
-                skipped += 1
-                continue
-            try:
-                target = dst / src.name
-                if target.exists():
-                    skipped += 1
-                    continue
-                shutil.copy2(src, target)
-                ok += 1
-            except Exception as e:
-                self._info_lbl.configure(text=f"复制失败: {e}", text_color=COLOR_ERR)
-                skipped += 1
+        try:
+            dst = music_library.ensure_folder(self._folder_path())
+        except Exception as e:
+            self._info_lbl.configure(text=f"目录创建失败: {e}", text_color=COLOR_ERR)
+            return
+        ok, skipped = music_library.add_files(paths, dst)
         self._info_lbl.configure(
             text=f"已添加 {ok} 首" + (f"，跳过 {skipped}" if skipped else ""),
             text_color=COLOR_OK if ok else COLOR_WARN)
@@ -181,14 +150,14 @@ class MusicPage(ctk.CTkFrame):
                                      f"删除文件？\n{path.name}\n（此操作不可恢复）"):
             return
         try:
-            path.unlink()
+            music_library.delete_file(path)
             self._info_lbl.configure(text=f"已删除 {path.name}", text_color=COLOR_OK)
         except Exception as e:
             self._info_lbl.configure(text=f"删除失败: {e}", text_color=COLOR_ERR)
         self._refresh_list()
 
     def _sync_to_watch(self) -> None:
-        files = self._scan()
+        files = music_library.scan(self._folder_path())
         if not files:
             self._info_lbl.configure(text="文件夹是空的，先添加音乐",
                                        text_color=COLOR_WARN)
@@ -196,7 +165,6 @@ class MusicPage(ctk.CTkFrame):
         self._sync_btn.configure(state="disabled", text="推送中…")
         fut: ConcFuture = ConcFuture()
         # 通知 provider 更新 music_folder（如果改过路径），然后让它重扫并推送
-        # provider 拿不到最新 cfg，所以这里用 emit("media:set_folder", path) 更新 + rescan
         self._app.bus.emit_threadsafe("media:set_folder", str(self._folder_path()))
         self._app.bus.emit_threadsafe("media:rescan", {"future": fut})
         fut.add_done_callback(lambda f: self.after(0, self._on_sync_done, f))
@@ -220,20 +188,20 @@ class MusicPage(ctk.CTkFrame):
             w.destroy()
         self._row_widgets.clear()
 
-        files = self._scan()
+        files = music_library.scan(self._folder_path())
         n = len(files)
-        over = max(0, n - MAX_TRACKS)
+        over = max(0, n - music_library.MAX_TRACKS)
         if n == 0:
             tip = "文件夹是空的，点「添加音乐」选 mp3/flac/wav/ogg/m4a"
             self._info_lbl.configure(text=tip, text_color=COLOR_MUTED)
         else:
             txt = f"共 {n} 首"
             if over:
-                txt += f"（手表上限 {MAX_TRACKS}，超出 {over} 首会被截断）"
+                txt += f"（手表上限 {music_library.MAX_TRACKS}，超出 {over} 首会被截断）"
             self._info_lbl.configure(text=txt, text_color=COLOR_MUTED)
 
         for i, p in enumerate(files):
-            self._make_row(i, p, over_limit=(i >= MAX_TRACKS))
+            self._make_row(i, p, over_limit=(i >= music_library.MAX_TRACKS))
 
     def _make_row(self, idx: int, path: Path, over_limit: bool) -> None:
         row = ctk.CTkFrame(self._scroll, fg_color=COLOR_PANEL_HI, corner_radius=8)
@@ -246,18 +214,8 @@ class MusicPage(ctk.CTkFrame):
                       anchor="e") \
             .grid(row=0, column=0, padx=(8, 4), pady=8)
 
-        # 文件名解析 → title / artist
-        stem = path.stem
-        if " - " in stem:
-            artist, _, title = stem.partition(" - ")
-            artist, title = artist.strip(), title.strip()
-            disp = f"{title}"
-            sub  = f"{artist}"
-        else:
-            disp = stem
-            sub  = path.suffix.upper().lstrip(".")
-
-        title_lbl = ctk.CTkLabel(row, text=disp, anchor="w",
+        title, sub = music_library.parse_track_meta(path)
+        title_lbl = ctk.CTkLabel(row, text=title, anchor="w",
                                   text_color=COLOR_TEXT if not over_limit else COLOR_WARN)
         title_lbl.grid(row=0, column=1, sticky="w", padx=(4, 8), pady=(8, 0))
         sub_lbl = ctk.CTkLabel(row, text=sub, anchor="w",
@@ -277,7 +235,7 @@ class MusicPage(ctk.CTkFrame):
 
     def _open_download_dialog(self) -> None:
         try:
-            self._ensure_folder()
+            music_library.ensure_folder(self._folder_path())
         except Exception as e:
             self._info_lbl.configure(text=f"目录创建失败: {e}", text_color=COLOR_ERR)
             return
@@ -295,10 +253,7 @@ class MusicPage(ctk.CTkFrame):
 # ============================================================================
 
 class _DownloadDialog(ctk.CTkToplevel):
-    """archive.org 搜索 + 下载弹窗。
-
-    线程模型：搜索 / 下载用 threading 跑后台，结果通过 self.after() 回主线程。
-    """
+    """archive.org 搜索 + 下载弹窗（纯 UI；业务调 platform.archive_org）。"""
 
     def __init__(self, master, dest_folder: Path,
                   on_done) -> None:
@@ -365,6 +320,29 @@ class _DownloadDialog(ctk.CTkToplevel):
         self._clear_rows()
         threading.Thread(target=self._search_worker, args=(kw,), daemon=True).start()
 
+    def _search_worker(self, kw: str) -> None:
+        try:
+            hits = archive_org.search_with_mp3(kw, limit=15)
+        except Exception as e:
+            self.after(0, lambda: self._on_search_failed(str(e)))
+            return
+        self.after(0, lambda: self._on_search_done(hits))
+
+    def _on_search_failed(self, msg: str) -> None:
+        self._search_btn.configure(state="normal", text="搜索")
+        self._status.configure(text=f"搜索失败: {msg}", text_color=COLOR_ERR)
+
+    def _on_search_done(self, hits: list[archive_org.TrackHit]) -> None:
+        self._search_btn.configure(state="normal", text="搜索")
+        if not hits:
+            self._status.configure(text="未找到结果，换个关键词试试",
+                                     text_color=COLOR_WARN)
+            return
+        self._status.configure(text=f"找到 {len(hits)} 个结果",
+                                 text_color=COLOR_OK)
+        for i, h in enumerate(hits):
+            self._make_row(i, h)
+
     # -- 一键推荐 --------------------------------------------------------
 
     def _do_recommend(self) -> None:
@@ -388,7 +366,7 @@ class _DownloadDialog(ctk.CTkToplevel):
 
     def _recommend_worker(self) -> None:
         def progress(category: str, picked: int, total: int) -> None:
-            self.after(0, lambda c=category, t=total:
+            self.after(0, lambda t=total:
                 self._pick_btn.configure(text=f"找到 {t} 首…"))
         try:
             hits = archive_org.collect_recommendations(progress_cb=progress)
@@ -398,7 +376,6 @@ class _DownloadDialog(ctk.CTkToplevel):
         if not hits:
             self.after(0, lambda: self._on_recommend_failed("未找到合适的曲目"))
             return
-        # 全部串行下载
         self.after(0, lambda h=hits: self._on_recommend_search_done(h))
 
     def _on_recommend_failed(self, msg: str) -> None:
@@ -407,7 +384,6 @@ class _DownloadDialog(ctk.CTkToplevel):
         self._status.configure(text=f"推荐失败: {msg}", text_color=COLOR_ERR)
 
     def _on_recommend_search_done(self, hits: list) -> None:
-        # 先把所有曲目展示在列表里（带进度条按钮），然后启一条线程串行下载
         self._status.configure(text=f"已找到 {len(hits)} 首，开始下载…",
                                  text_color=COLOR_OK)
         self._pick_btn.configure(text=f"下载 0/{len(hits)}")
@@ -423,7 +399,6 @@ class _DownloadDialog(ctk.CTkToplevel):
             row = self._row_widgets[i] if i < len(self._row_widgets) else None
             btn = None
             if row is not None:
-                # row 的最后一个孩子是按钮
                 children = row.winfo_children()
                 if children: btn = children[-1]
             def progress(done: int, t: int, b=btn) -> None:
@@ -454,35 +429,6 @@ class _DownloadDialog(ctk.CTkToplevel):
         self._status.configure(
             text=f"完成：成功 {ok} / 共 {total} 首",
             text_color=COLOR_OK if ok else COLOR_ERR)
-
-    def _search_worker(self, kw: str) -> None:
-        try:
-            hits = archive_org.search(kw, limit=15)
-        except Exception as e:
-            self.after(0, lambda: self._on_search_failed(str(e)))
-            return
-        # 二轮：每个 hit 取 mp3 直链（resolve），无 mp3 的丢弃
-        resolved: list[archive_org.TrackHit] = []
-        for h in hits:
-            r = archive_org.resolve_mp3(h)
-            if r and r.file_name:
-                resolved.append(r)
-        self.after(0, lambda: self._on_search_done(resolved))
-
-    def _on_search_failed(self, msg: str) -> None:
-        self._search_btn.configure(state="normal", text="搜索")
-        self._status.configure(text=f"搜索失败: {msg}", text_color=COLOR_ERR)
-
-    def _on_search_done(self, hits: list[archive_org.TrackHit]) -> None:
-        self._search_btn.configure(state="normal", text="搜索")
-        if not hits:
-            self._status.configure(text="未找到结果，换个关键词试试",
-                                     text_color=COLOR_WARN)
-            return
-        self._status.configure(text=f"找到 {len(hits)} 个结果",
-                                 text_color=COLOR_OK)
-        for i, h in enumerate(hits):
-            self._make_row(i, h)
 
     # -- row & download --------------------------------------------------
 
@@ -529,7 +475,7 @@ class _DownloadDialog(ctk.CTkToplevel):
             self.after(0, lambda: btn.configure(text=f"{pct}%"))
         try:
             path = archive_org.download(hit, self._dest, progress_cb=progress)
-        except Exception as e:
+        except Exception:
             self.after(0, lambda: btn.configure(text="失败", fg_color=COLOR_ERR))
             return
         if path is None:

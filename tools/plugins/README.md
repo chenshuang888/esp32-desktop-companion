@@ -6,6 +6,24 @@
 
 ---
 
+## 0. 先问自己：这事真的需要插件吗？
+
+**插件存在的唯一理由**：ESP32 端某个动态 app 需要 PC 帮它做 BLE 收发之外的事。
+
+| 场景 | 需要插件？ |
+|---|---|
+| 纯本地动态 app（闹钟 / 计算器 / 2048 / 涂鸦 / 计时器） | ❌ |
+| 只用 bridge 透传调试（echo 类） | ❌（哑总线就够） |
+| 动态 app 要 PC 拉网络数据（HTTP API） | ✅ |
+| 动态 app 要 PC 抓系统状态（通知 / 媒体 / 网速） | ✅ |
+| 动态 app 要联机（PC 当中继路由器） | ✅ |
+
+反过来：**PC 端独立功能不是插件**——比如音乐文件夹同步、文件上传。它们没有 ESP32 动态 app 跟它们通信，是主程序自己的 GUI 页。
+
+一句话：**插件 = ESP32 动态 app 在 PC 端的「代理人」**。没有动态 app 找它，它就不该存在。先在 ESP32 端写脚本、确认有 PC 配合需求，再回头加 `plugins/<name>/` —— 不要"提前做好备用"。
+
+---
+
 ## 1. 一个最小插件长什么样
 
 ```
@@ -207,11 +225,10 @@ from win_notifications import WinNotificationMonitor   # 同目录
 
 ---
 
-## 8. 4 个示例插件（见仓库）
+## 8. 3 个示例插件（见仓库）
 
 - `tools/plugins/weather/` —— 通用服务，bind_app=None
-- `tools/plugins/music_proxy/` —— 通用服务，封 Windows SMTC
 - `tools/plugins/notif/` —— PC → 设备单向，绑 notif_pkg
 - `tools/plugins/gomoku/` —— 双向 + GUI 页，绑 gomoku_pkg
 
-写新插件可以直接参考这四个的代码风格。
+写新插件可以直接参考这三个的代码风格。
