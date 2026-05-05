@@ -76,3 +76,15 @@ Desktop.ini
 *.workspace # General workspace files, can be from various tools
 *.suo       # Visual Studio Solution User Options
 *.sln.docstates # Visual Studio
+
+# IDE / editor
+.vscode/
+.idea/
+
+# AI / dev workflow tooling (personal, not for public repo)
+.claude/
+.trellis/
+.devcontainer/
+
+# Build outputs of the dynamic-app packer
+.mpkg-build/
