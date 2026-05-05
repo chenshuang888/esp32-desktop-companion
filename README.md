@@ -1,5 +1,11 @@
 # ESP32-S3 桌面伴侣 (Desktop Companion)
 
+> **🌐 桌面伴侣项目（共 4 仓）**
+> **▸ 本仓：开发主仓 / 设备固件源**
+> · [设备固件发布版](https://github.com/chenshuang888/esp32-companion-firmware)
+> · [Windows 桌面端](https://github.com/chenshuang888/esp32-companion-app)
+> · [应用市场](https://github.com/chenshuang888/esp32-marketplace)（[在线 demo](https://marketplace.chenshuang.fun)）
+
 基于 **ESP-IDF v5.4.3 + LVGL v9.5.0** 的 ESP32-S3 触摸屏桌面伴侣。通过 BLE 与 PC（Python 工具）双向联动，实现时间同步、天气/通知推送、正在播放副屏、反向控制面板等一体化体验。
 
 **v0.8 起内置 MicroQuickJS，支持以 JS 脚本编写的"动态 App"**：固件不重烧即可新增小程序。**v0.9 完成动态 app 平台化** ——「**新增 app 不改任何端的基础设施代码**」，配套 PC 端插件化架构（`tools/companion/plugins/`），加目录即生效。
@@ -450,7 +456,7 @@ idf.py -p COM3 erase-flash
 
 ## 版本历史
 
-- **v0.10 (2026-05-04)** — Marketplace 集成：companion 加「市场」侧边栏，浏览 [esp32-marketplace](../esp32-marketplace/) 上的动态 app，**一键安装/卸载/更新**。
+- **v0.10 (2026-05-04)** — Marketplace 集成：companion 加「市场」侧边栏，浏览 [esp32-marketplace](https://github.com/chenshuang888/esp32-marketplace) 上的动态 app，**一键安装/卸载/更新**。
   - 新增 `tools/companion/marketplace/`：HTTP 客户端 + .mpkg 解析 + plugin 装载 + registry
   - 新增 GUI 页 `tools/companion/gui/pages/marketplace.py`
   - 安装链路复用现有 `UploadProvider` + `UploaderClient.upload_app_pack`，零修改
