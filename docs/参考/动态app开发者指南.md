@@ -266,7 +266,7 @@ class MyPlugin(Plugin):
 - 插件 emit `bus("my:state", ...)`，GUI 页订阅并 `self.after(0, ...)` 跨线程刷新
 - 插件 → GUI 单向流，GUI → 插件再走 bus 回写
 
-详见 [`tools/plugins/README.md`](../tools/plugins/README.md)。
+详见 [`tools/plugins/README.md`](../../tools/plugins/README.md)。
 
 ---
 

@@ -1,7 +1,7 @@
 # 动态 App UI 设计系统
 
 > 适用：基于本固件 dynamic_app runtime 的 JS app 视觉与交互规范
-> 配套：[`动态app_JS_API速查.md`](./动态app_JS_API速查.md)（API 字典）+ [`动态app开发指南.md`](./动态app开发指南.md)（流程教程）
+> 配套：[`动态app_JS_API速查.md`](./动态app_JS_API速查.md)（API 字典）+ [`动态app开发者指南.md`](./动态app开发者指南.md)（流程教程）
 >
 > **本文档目标**：让动态 app 看起来与原生 app 几乎一致，并且写法是固定模板而不是每次现拼。
 

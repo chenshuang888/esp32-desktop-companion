@@ -253,7 +253,7 @@ ble.appName;                          // 'myapp'
 
 > ⚠️ 每个 app 调一次 `makeBle` 即可。再调会**覆盖**底层 onRecv，旧 helper 失效。
 
-详见 [`docs/动态app双端通信协议.md`](./动态app双端通信协议.md)。
+详见 [`动态app双端通信协议.md`](./动态app双端通信协议.md)。
 
 ---
 

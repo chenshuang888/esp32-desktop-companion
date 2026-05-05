@@ -4,7 +4,7 @@
 
 **v0.8 起内置 MicroQuickJS，支持以 JS 脚本编写的"动态 App"**：固件不重烧即可新增小程序。**v0.9 完成动态 app 平台化** ——「**新增 app 不改任何端的基础设施代码**」，配套 PC 端插件化架构（`tools/companion/plugins/`），加目录即生效。
 
-> **快速跳转**：[快速开始](#快速开始) · [动态 App 开发](docs/动态app开发者指南.md) · [BLE 协议](#ble-协议约定) · [项目结构](#项目结构)
+> **快速跳转**：[快速开始](#快速开始) · [动态 App 开发](docs/参考/动态app开发者指南.md) · [BLE 协议](#ble-协议约定) · [项目结构](#项目结构)
 
 ---
 
@@ -36,7 +36,7 @@
 | **gomoku** | BLE 联机五子棋（双向） | ✅ `tools/plugins/gomoku/`（含 GUI） |
 | **tictactoe** | 人机井字棋（PC AI + 监控页） | ✅ `tools/plugins/tictactoe/`（含 GUI） |
 
-详细的开发者指南见 **[docs/动态app开发者指南.md](docs/动态app开发者指南.md)**。
+详细的开发者指南见 **[docs/参考/动态app开发者指南.md](docs/参考/动态app开发者指南.md)**。
 
 ---
 
@@ -233,7 +233,7 @@ python -m companion --device ESP32-S3-DEMO
 
 ### 动态 App 开发
 
-打开 **[docs/动态app开发者指南.md](docs/动态app开发者指南.md)**——30 分钟跑通 hello world。
+打开 **[docs/参考/动态app开发者指南.md](docs/参考/动态app开发者指南.md)**——30 分钟跑通 hello world。
 
 最小新 app：
 
@@ -480,10 +480,10 @@ idf.py -p COM3 erase-flash
 
 | 文档 | 内容 |
 |---|---|
-| **[docs/动态app开发者指南.md](docs/动态app开发者指南.md)** | 写动态 app 必读：30 分钟入门 + API 速查 + 15 坑 |
+| **[docs/参考/动态app开发者指南.md](docs/参考/动态app开发者指南.md)** | 写动态 app 必读：30 分钟入门 + API 速查 + 15 坑 |
 | [docs/当前的三层架构框架图.md](docs/当前的三层架构框架图.md) | VDOM / sys.* / C drain 三层数据流 |
-| [docs/动态app双端通信协议.md](docs/动态app双端通信协议.md) | bridge JSON 协议契约 |
-| [docs/动态app_包格式规范.md](docs/动态app_包格式规范.md) | manifest.json 字段约束 |
+| [docs/参考/动态app双端通信协议.md](docs/参考/动态app双端通信协议.md) | bridge JSON 协议契约 |
+| [docs/参考/动态app_包格式规范.md](docs/参考/动态app_包格式规范.md) | manifest.json 字段约束 |
 | [tools/README.md](tools/README.md) | PC 端 4 个子目录定位 + 启动命令 |
 | [tools/plugins/README.md](tools/plugins/README.md) | 插件作者指南（§0 判定规则） |
 | `docs/*_工作日志.md` | 历次重构决策与踩坑记录 |
