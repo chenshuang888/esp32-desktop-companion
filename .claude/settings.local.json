@@ -96,7 +96,15 @@
       "mcp__chrome-devtools__wait_for",
       "mcp__chrome-devtools__fill_form",
       "mcp__chrome-devtools__upload_file",
-      "mcp__chrome-devtools__handle_dialog"
+      "mcp__chrome-devtools__handle_dialog",
+      "Bash(mkdir -p C:/Users/ChenShuang/Desktop/esp32-companion-app/src/companion_user/gui/pages C:/Users/ChenShuang/Desktop/esp32-companion-app/src/companion_user/marketplace C:/Users/ChenShuang/Desktop/esp32-companion-app/src/companion_user/platform C:/Users/ChenShuang/Desktop/esp32-companion-app/src/companion_user/plugin_sdk C:/Users/ChenShuang/Desktop/esp32-companion-app/src/companion_user/providers/native C:/Users/ChenShuang/Desktop/esp32-companion-app/src/companion_user/providers/dynapp)",
+      "Bash(mkdir -p \"C:/Users/ChenShuang/Desktop/esp32-companion-app/assets\")",
+      "Bash(cp C:/Users/ChenShuang/Desktop/esp32/demo6/tools/companion/bus.py C:/Users/ChenShuang/Desktop/esp32/demo6/tools/companion/core.py C:/Users/ChenShuang/Desktop/esp32/demo6/tools/companion/runner.py C:/Users/ChenShuang/Desktop/esp32/demo6/tools/companion/tray.py C:/Users/ChenShuang/Desktop/esp32/demo6/tools/companion/constants.py C:/Users/ChenShuang/Desktop/esp32-companion-app/src/companion_user/)",
+      "Bash(cp 'C:/Users/ChenShuang/Desktop/esp32/demo6/tools/companion/plugin_sdk/*.py' C:/Users/ChenShuang/Desktop/esp32-companion-app/src/companion_user/plugin_sdk/)",
+      "Bash(cp 'C:/Users/ChenShuang/Desktop/esp32/demo6/tools/companion/platform/*.py' C:/Users/ChenShuang/Desktop/esp32-companion-app/src/companion_user/platform/)",
+      "Bash(grep *)",
+      "Read(//c/Users/ChenShuang/AppData/Roaming/esp32-companion-user/plugins/**)",
+      "Read(//c/Users/ChenShuang/AppData/Roaming/esp32-companion-user/plugins/.marketplace_meta/**)"
     ]
   }
 }

@@ -69,7 +69,7 @@
 ## 项目结构
 
 ```
-demo6/
+esp32-desktop-companion/
 ├── main/                       启动入口（main.c → app_main → 各 service init）
 │
 ├── app/                        应用层（UI）

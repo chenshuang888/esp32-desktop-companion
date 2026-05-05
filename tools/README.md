@@ -1,6 +1,6 @@
 # `tools/` —— PC 端工具总目录
 
-> ESP32-S3 demo6 的 PC 配套：BLE 桌面伴侣 + 动态 app 配套服务 + 构建期脚本。
+> ESP32-S3 桌面伴侣（esp32-desktop-companion）的 PC 配套：BLE 桌面伴侣 + 动态 app 配套服务 + 构建期脚本。
 
 ---
 
